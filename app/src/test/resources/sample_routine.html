@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>AIUB Portal - Class Routine</title>
+</head>
+<body>
+<div class="container portal-content">
+    <h2>Student Class Routine</h2>
+    <div class="user-profile">
+        <span class="student-name">Student Name (21-XXXXX-1)</span>
+        <a href="/Logout" class="btn-logout">Logout</a>
+    </div>
+
+    <!-- Routine Table -->
+    <table class="table table-bordered table-striped routine-table" id="routineTable">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Course Name</th>
+                <th>Section</th>
+                <th>Day</th>
+                <th>Time</th>
+                <th>Room</th>
+                <th>Faculty</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>CSC 3211</td>
+                <td>Operating Systems</td>
+                <td>A</td>
+                <td>Sunday</td>
+                <td>08:00 AM - 09:30 AM</td>
+                <td>DS0201</td>
+                <td>Dr. M. Rahman (MRH)</td>
+            </tr>
+            <tr>
+                <td>CSC 3222</td>
+                <td>Algorithms</td>
+                <td>B</td>
+                <td>Sunday</td>
+                <td>12:30 PM - 02:00 PM</td>
+                <td>DS0304</td>
+                <td>Prof. S. Ahmed (SAH)</td>
+            </tr>
+            <tr>
+                <td>CSC 3230</td>
+                <td>Web Technologies</td>
+                <td>C</td>
+                <td>Monday</td>
+                <td>09:30 AM - 11:00 AM</td>
+                <td>DS0102</td>
+                <td>Engr. K. Hasan (KHS)</td>
+            </tr>
+            <tr>
+                <td>CSC 4140</td>
+                <td>Artificial Intelligence</td>
+                <td>A</td>
+                <td>Tuesday</td>
+                <td>14:00 - 15:30</td>
+                <td>DS0205</td>
+                <td>Dr. F. Alam (FAM)</td>
+            </tr>
+            <!-- Malformed row with missing time to test graceful warning handling -->
+            <tr class="row-warning-test">
+                <td>CSC 9999</td>
+                <td>Seminar on Computing</td>
+                <td>A</td>
+                <td>Wednesday</td>
+                <td></td>
+                <td>Auditorium</td>
+                <td>TBA</td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="7">Total registered courses: 4</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+</body>
+</html>

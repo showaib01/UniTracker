@@ -1,0 +1,114 @@
+<resources>
+    <string name="app_name">UniTrack</string>
+    <string name="nav_today">Today</string>
+    <string name="nav_routine">Routine</string>
+    <string name="nav_tracker">Tracker</string>
+    <string name="nav_tasks">Tasks</string>
+    <string name="nav_notes">Notes</string>
+    <string name="nav_more">More</string>
+
+    <!-- Portal and Webview -->
+    <string name="portal_title">AIUB Portal</string>
+    <string name="portal_subtitle">Official Student Portal (portal.aiub.edu)</string>
+    <string name="portal_login_hint">Log in with your AIUB Student ID and password. Solve any CAPTCHA manually. Your session cookies will be safely preserved locally for offline synchronization.</string>
+    <string name="portal_capture_button">Capture Current Page</string>
+    <string name="portal_debug_button">Parser Debug</string>
+    <string name="portal_refresh">Reload</string>
+    <string name="portal_home">Portal Home</string>
+    <string name="portal_save_id">Remember Student ID</string>
+    <string name="portal_session_active">Session Active</string>
+    <string name="portal_session_expired">Session Expired - Please Log In</string>
+    <string name="portal_sync_now">Sync Now</string>
+    <string name="portal_offline_notice">Offline mode - displaying cached data</string>
+    <string name="portal_last_synced">Last synced: %1$s</string>
+    <string name="portal_never_synced">Never synced</string>
+    <string name="portal_login_to_refresh">Log in to refresh</string>
+
+    <!-- Page Capture & Debug -->
+    <string name="capture_title">Page Capture</string>
+    <string name="capture_subtitle">Capture rendered HTML to inspect portal structure</string>
+    <string name="capture_success">Page HTML successfully captured!</string>
+    <string name="capture_saved_count">Captured Pages (%1$d)</string>
+    <string name="capture_copy_html">Copy HTML</string>
+    <string name="capture_share_html">Share HTML</string>
+    <string name="capture_html_copied">HTML copied to clipboard!</string>
+    <string name="capture_delete">Delete</string>
+    <string name="capture_no_pages">No pages captured yet. Navigate in the Portal and tap \"Capture Current Page\".</string>
+    <string name="debug_title">Parser Debug</string>
+    <string name="debug_test_selector">Test CSS Selector (e.g. table.routine, .notice-item)</string>
+    <string name="debug_run_query">Test Query</string>
+    <string name="debug_results_found">%1$d matches found</string>
+    <string name="debug_no_matches">No matching elements found</string>
+    <string name="debug_raw_html">Raw Rendered HTML</string>
+
+    <!-- Today Screen -->
+    <string name="today_title">Today\'s Schedule</string>
+    <string name="today_greeting">Welcome back, Student</string>
+    <string name="today_no_classes">No classes scheduled for today! Enjoy your break or study ahead.</string>
+    <string name="today_next_class_prefix">Next class in</string>
+    <string name="today_class_in_progress">Class in progress</string>
+    <string name="today_room_label">Room:</string>
+    <string name="today_section_label">Section:</string>
+    <string name="today_teacher_label">Faculty:</string>
+    <string name="today_time_label">Time:</string>
+    <string name="today_upcoming_tasks">Upcoming Deadlines</string>
+    <string name="today_no_tasks">No pending assignments or exams</string>
+    <string name="today_now">NOW</string>
+    <string name="today_next">NEXT</string>
+    <string name="today_in_mins">in %1$d min</string>
+    <string name="today_mins_left">%1$d min left</string>
+    <string name="today_classes_count">TODAY · %1$d CLASSES</string>
+    <string name="today_classes_count_single">TODAY · 1 CLASS</string>
+    <string name="today_no_more_classes">No more classes today</string>
+    <string name="today_due_soon">DUE SOON</string>
+    <string name="see_all">See all</string>
+    <string name="no_upcoming_deadlines">No upcoming deadlines</string>
+    <string name="attendance_alert_title">ATTENDANCE ALERT</string>
+    <string name="attendance_below_threshold">below %1$d%%</string>
+
+    <!-- Class Detail Sheet -->
+    <string name="class_action_notes">Notes</string>
+    <string name="class_action_tasks">Tasks</string>
+    <string name="class_action_reminder">Reminder</string>
+    <string name="notes_connect_drive_hint">Connect Google Drive in Settings to keep notes here</string>
+    <string name="notes_add_note">Add note</string>
+    <string name="tasks_add_task">Add task</string>
+    <string name="notes_open_drive">Open folder in Drive</string>
+    <string name="attendance_attended_summary">Attended %1$d of %2$d · %3$d%%</string>
+    <string name="class_reminder_enabled">Class reminder enabled</string>
+    <string name="class_reminder_disabled">Class reminder muted</string>
+
+    <!-- More / Settings -->
+    <string name="more_title">Menu &amp; Tools</string>
+    <string name="more_portal">AIUB Portal</string>
+    <string name="more_page_capture">Page Capture &amp; Samples</string>
+    <string name="more_parser_debug">Parser Debugger</string>
+    <string name="more_attendance">Attendance Tracker</string>
+    <string name="more_notices">Notices</string>
+    <string name="more_settings">Settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_portal_url">Portal URL</string>
+    <string name="settings_attendance_threshold">Attendance Warning Threshold (%)</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_clear_data">Clear Local Data</string>
+    <string name="settings_clear_data_confirm">Are you sure you want to clear all offline cached routine, attendance, and capture data?</string>
+    <string name="settings_clear_data_success">Local cache cleared</string>
+
+    <!-- Course Page & Tasks -->
+    <string name="course_open_course">Open course</string>
+    <string name="course_quick_quiz">+ Quiz</string>
+    <string name="course_quick_assignment">+ Assignment</string>
+    <string name="course_quick_exam">+ Exam</string>
+    <string name="course_upcoming">UPCOMING</string>
+    <string name="course_past">PAST</string>
+    <string name="course_no_items">No quizzes or assignments yet</string>
+    <string name="tasks_title">Tasks &amp; Deadlines</string>
+    <string name="tasks_overdue">OVERDUE</string>
+    <string name="tasks_today">TODAY</string>
+    <string name="tasks_this_week">THIS WEEK</string>
+    <string name="tasks_later">LATER</string>
+    <string name="tasks_completed">COMPLETED</string>
+    <string name="settings_all_reminders">All Reminders</string>
+    <string name="settings_default_reminder_offsets">Default Reminder Offsets</string>
+</resources>

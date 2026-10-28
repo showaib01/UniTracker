@@ -1,0 +1,8 @@
+{
+  "name": "Remix UniTrack",
+  "description": "Personal student companion for AIUB students with offline portal cache, daily class routine, attendance calculator, and Google Drive notes integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

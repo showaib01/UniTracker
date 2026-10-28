@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>AIUB Portal - Course Attendance</title>
+</head>
+<body>
+<div class="container portal-content">
+    <h2>Student Attendance Overview</h2>
+    <div class="user-profile">
+        <span class="student-name">Student Name (21-XXXXX-1)</span>
+        <a href="/Logout" class="btn-logout">Logout</a>
+    </div>
+
+    <!-- Attendance Table -->
+    <table class="table table-bordered table-hover attendance-table" id="attendanceTable">
+        <thead>
+            <tr>
+                <th>Course</th>
+                <th>Section</th>
+                <th>Attended</th>
+                <th>Total Classes</th>
+                <th>Percentage</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>CSC 3211 - Operating Systems</td>
+                <td>A</td>
+                <td>14</td>
+                <td>16</td>
+                <td>87.5%</td>
+            </tr>
+            <tr>
+                <td>CSC 3222 - Algorithms</td>
+                <td>B</td>
+                <td>11</td>
+                <td>15</td>
+                <td>73.3%</td>
+            </tr>
+            <tr>
+                <td>CSC 3230 - Web Technologies</td>
+                <td>C</td>
+                <td>15</td>
+                <td>16</td>
+                <td>93.7%</td>
+            </tr>
+            <tr>
+                <td>CSC 4140 - Artificial Intelligence</td>
+                <td>A</td>
+                <td>13</td>
+                <td>15</td>
+                <td>86.6%</td>
+            </tr>
+            <!-- Row with missing attendance data to test parser warning -->
+            <tr>
+                <td>CSC 9999 - Seminar</td>
+                <td>A</td>
+                <td>N/A</td>
+                <td>0</td>
+                <td>0.0%</td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="5">Minimum required attendance: 80%</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+</body>
+</html>

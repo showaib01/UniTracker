@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">UniTrack</string>
+    <string name="nav_today">আজকের দিন</string>
+    <string name="nav_routine">রুটিন</string>
+    <string name="nav_tracker">ট্র্যাকার</string>
+    <string name="nav_tasks">টাস্ক</string>
+    <string name="nav_notes">নোটস</string>
+    <string name="nav_more">আরও</string>
+
+    <!-- Portal and Webview -->
+    <string name="portal_title">AIUB পোর্টাল</string>
+    <string name="portal_subtitle">অফিসিয়াল স্টুডেন্ট পোর্টাল (portal.aiub.edu)</string>
+    <string name="portal_login_hint">আপনার AIUB স্টুডেন্ট আইডি এবং পাসওয়ার্ড দিয়ে লগইন করুন। ক্যাপচা নিজে সমাধান করুন। আপনার সেশন অফলাইন সিঙ্কের জন্য সংরক্ষিত থাকবে।</string>
+    <string name="portal_capture_button">পেজ ক্যাপচার করুন</string>
+    <string name="portal_debug_button">পার্সার ডিবাগ</string>
+    <string name="portal_refresh">রিলোড</string>
+    <string name="portal_home">পোর্টাল হোম</string>
+    <string name="portal_save_id">স্টুডেন্ট আইডি মনে রাখুন</string>
+    <string name="portal_session_active">সেশন সক্রিয়</string>
+    <string name="portal_session_expired">সেশন শেষ - পুনরায় লগইন করুন</string>
+    <string name="portal_sync_now">এখনই সিঙ্ক করুন</string>
+    <string name="portal_offline_notice">অফলাইন মোড - সংরক্ষিত ডেটা প্রদর্শিত হচ্ছে</string>
+    <string name="portal_last_synced">সর্বশেষ সিঙ্ক: %1$s</string>
+    <string name="portal_never_synced">কখনও সিঙ্ক করা হয়নি</string>
+    <string name="portal_login_to_refresh">লগইন করে রিফ্রেশ করুন</string>
+
+    <!-- Page Capture & Debug -->
+    <string name="capture_title">পেজ ক্যাপচার</string>
+    <string name="capture_subtitle">পোর্টালের গঠন দেখতে রেন্ডার করা এইচটিএমএল ক্যাপচার করুন</string>
+    <string name="capture_success">পেজ এইচটিএমএল সফলভাবে সংরক্ষিত হয়েছে!</string>
+    <string name="capture_saved_count">ক্যাপচার করা পেজ (%1$d)</string>
+    <string name="capture_copy_html">এইচটিএমএল কপি করুন</string>
+    <string name="capture_share_html">শেয়ার করুন</string>
+    <string name="capture_html_copied">ক্লিপবোর্ডে কপি করা হয়েছে!</string>
+    <string name="capture_delete">মুছে ফেলুন</string>
+    <string name="capture_no_pages">এখনও কোনো পেজ ক্যাপচার করা হয়নি। পোর্টালে গিয়ে \"পেজ ক্যাপচার করুন\" চাপুন।</string>
+    <string name="debug_title">পার্সার ডিবাগ</string>
+    <string name="debug_test_selector">CSS সিলেক্টর পরীক্ষা করুন (যেমন: table.routine)</string>
+    <string name="debug_run_query">সিলেক্টর পরীক্ষা</string>
+    <string name="debug_results_found">%1$d টি উপাদান পাওয়া গেছে</string>
+    <string name="debug_no_matches">কোনো উপাদান পাওয়া যায়নি</string>
+    <string name="debug_raw_html">রেন্ডার করা এইচটিএমএল</string>
+
+    <!-- Today Screen -->
+    <string name="today_title">আজকের সময়সূচী</string>
+    <string name="today_greeting">স্বাগতম, শিক্ষার্থী</string>
+    <string name="today_no_classes">আজ কোনো ক্লাস নেই! পড়াশোনা এগিয়ে নিন বা বিশ্রাম করুন।</string>
+    <string name="today_next_class_prefix">পরবর্তী ক্লাস শুরু হতে বাকি</string>
+    <string name="today_class_in_progress">ক্লাস চলছে</string>
+    <string name="today_room_label">রুম:</string>
+    <string name="today_section_label">সেকশন:</string>
+    <string name="today_teacher_label">শিক্ষক:</string>
+    <string name="today_time_label">সময়:</string>
+    <string name="today_upcoming_tasks">আসন্ন ডেডলাইন</string>
+    <string name="today_no_tasks">কোনো অ্যাসাইনমেন্ট বা পরীক্ষা বাকি নেই</string>
+    <string name="today_now">চলছে</string>
+    <string name="today_next">পরবর্তী</string>
+    <string name="today_in_mins">%1$d মিনিটে</string>
+    <string name="today_mins_left">%1$d মিনিট বাকি</string>
+    <string name="today_classes_count">আজ · %1$d টি ক্লাস</string>
+    <string name="today_classes_count_single">আজ · ১টি ক্লাস</string>
+    <string name="today_no_more_classes">আজ আর কোনো ক্লাস নেই</string>
+    <string name="today_due_soon">শীঘ্রই জমা</string>
+    <string name="see_all">সব দেখুন</string>
+    <string name="no_upcoming_deadlines">কোনো আসন্ন ডেডলাইন নেই</string>
+    <string name="attendance_alert_title">উপস্থিতি সতর্কতা</string>
+    <string name="attendance_below_threshold">%1$d%% এর নিচে</string>
+
+    <!-- Class Detail Sheet -->
+    <string name="class_action_notes">নোটস</string>
+    <string name="class_action_tasks">টাস্ক</string>
+    <string name="class_action_reminder">রিমাইন্ডার</string>
+    <string name="notes_connect_drive_hint">নোটস সংরক্ষণ করতে সেটিংসে গুগল ড্রাইভ সংযুক্ত করুন</string>
+    <string name="notes_add_note">নোট যোগ করুন</string>
+    <string name="tasks_add_task">টাস্ক যোগ করুন</string>
+    <string name="notes_open_drive">ড্রাইভে ফোল্ডার খুলুন</string>
+    <string name="attendance_attended_summary">উপস্থিতি %1$d/%2$d · %3$d%%</string>
+    <string name="class_reminder_enabled">ক্লাস রিমাইন্ডার চালু করা হয়েছে</string>
+    <string name="class_reminder_disabled">ক্লাস রিমাইন্ডার বন্ধ করা হয়েছে</string>
+
+    <!-- More / Settings -->
+    <string name="more_title">মেনু ও সেটিংস</string>
+    <string name="more_portal">AIUB পোর্টাল</string>
+    <string name="more_page_capture">পেজ ক্যাপচার ও নমুনা</string>
+    <string name="more_parser_debug">পার্সার ডিবাগার</string>
+    <string name="more_attendance">উপস্থিতি ট্র্যাকার</string>
+    <string name="more_notices">নোটিশ</string>
+    <string name="more_settings">সেটিংস</string>
+    <string name="settings_title">সেটিংস</string>
+    <string name="settings_portal_url">পোর্টাল ইউআরএল</string>
+    <string name="settings_attendance_threshold">উপস্থিতি সতর্কবার্তা থ্রেশহোল্ড (%)</string>
+    <string name="settings_theme">থিম</string>
+    <string name="settings_language">ভাষা</string>
+    <string name="settings_clear_data">লোকাল ডেটা মুছুন</string>
+    <string name="settings_clear_data_confirm">আপনি কি নিশ্চিত যে সংরক্ষিত অফলাইন রুটিন এবং ক্যাপচার ডেটা মুছে ফেলতে চান?</string>
+    <string name="settings_clear_data_success">লোকাল ডেটা মুছে ফেলা হয়েছে</string>
+
+    <!-- Course Page & Tasks -->
+    <string name="course_open_course">কোর্স পেজে যান</string>
+    <string name="course_quick_quiz">+ কুইজ</string>
+    <string name="course_quick_assignment">+ অ্যাসাইনমেন্ট</string>
+    <string name="course_quick_exam">+ পরীক্ষা</string>
+    <string name="course_upcoming">আসন্ন</string>
+    <string name="course_past">পূর্ববর্তী</string>
+    <string name="course_no_items">এখনও কোনো কুইজ বা অ্যাসাইনমেন্ট নেই</string>
+    <string name="tasks_title">টাস্ক ও ডেডলাইন</string>
+    <string name="tasks_overdue">মেয়াদোত্তীর্ণ</string>
+    <string name="tasks_today">আজকে</string>
+    <string name="tasks_this_week">চলতি সপ্তাহে</string>
+    <string name="tasks_later">পরবর্তীতে</string>
+    <string name="tasks_completed">সম্পন্ন</string>
+    <string name="settings_all_reminders">সব রিমাইন্ডার</string>
+    <string name="settings_default_reminder_offsets">ডিফল্ট রিমাইন্ডার সময়</string>
+</resources>
