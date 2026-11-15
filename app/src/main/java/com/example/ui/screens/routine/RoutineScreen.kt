@@ -63,7 +63,6 @@ fun RoutineScreen(
     val context = LocalContext.current
     val app = context.applicationContext as UniTrackApplication
     val routineDao = app.database.routineDao()
-    val attendanceDao = app.database.attendanceDao()
     val taskDao = app.database.taskDao()
     val courseSettingDao = app.database.courseSettingDao()
 
@@ -81,7 +80,6 @@ fun RoutineScreen(
 
     // Detail sheet state
     var selectedRoutine by remember { mutableStateOf<ClassRoutineEntity?>(null) }
-    var selectedAttendance by remember { mutableStateOf<AttendanceEntity?>(null) }
     var selectedTasks by remember { mutableStateOf<List<TaskEntity>>(emptyList()) }
     var selectedReminderEnabled by remember { mutableStateOf(true) }
 
@@ -209,21 +207,12 @@ fun RoutineScreen(
                                     val setting = courseSettingDao.getSettingDirect(key)
                                     val isRemEnabled = setting?.notificationsEnabled ?: true
 
-                                    val allAtt = attendanceDao.getAllAttendanceDirect()
-                                    val att = allAtt.firstOrNull {
-                                        it.courseName.equals(routine.courseName, ignoreCase = true) &&
-                                                it.section.equals(routine.section, ignoreCase = true)
-                                    } ?: allAtt.firstOrNull {
-                                        it.courseName.equals(routine.courseName, ignoreCase = true)
-                                    }
-
                                     val allTasks = taskDao.getAllTasksDirect()
                                     val courseTasks = allTasks.filter {
                                         it.courseName.equals(routine.courseName, ignoreCase = true)
                                     }
 
                                     selectedRoutine = routine
-                                    selectedAttendance = att
                                     selectedTasks = courseTasks
                                     selectedReminderEnabled = isRemEnabled
                                 }
@@ -238,7 +227,6 @@ fun RoutineScreen(
         selectedRoutine?.let { routine ->
             ClassDetailSheet(
                 routine = routine,
-                attendance = selectedAttendance,
                 tasks = selectedTasks,
                 isReminderEnabled = selectedReminderEnabled,
                 onToggleReminder = { enabled ->

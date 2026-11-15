@@ -23,7 +23,6 @@ import androidx.work.workDataOf
 import com.example.MainActivity
 import com.example.UniTrackApplication
 import com.example.data.local.preferences.UserPreferencesRepository
-import com.example.data.parser.AttendanceParser
 import com.example.data.parser.PortalSelectorConfig
 import com.example.data.parser.RoutineParser
 import com.example.util.UniTrackLogger
@@ -39,7 +38,6 @@ class PortalSyncWorker(
 
     private val app = context.applicationContext as UniTrackApplication
     private val routineDao = app.database.routineDao()
-    private val attendanceDao = app.database.attendanceDao()
     private val prefsRepo = app.preferencesRepository
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -47,7 +45,7 @@ class PortalSyncWorker(
 
         try {
             val prefs = prefsRepo.userPreferencesFlow.first()
-            val portalBaseUrl = prefs.portalUrl.ifBlank { UserPreferencesRepository.DEFAULT_PORTAL_URL }.trimEnd('/')
+            val portalBaseUrl = UserPreferencesRepository.DEFAULT_PORTAL_URL.trimEnd('/')
 
             // Check CookieManager session
             val cookies = CookieManager.getInstance().getCookie(portalBaseUrl)
@@ -72,10 +70,9 @@ class PortalSyncWorker(
             }
 
             var routineSavedCount = 0
-            var attendanceSavedCount = 0
             var parseErrorMessage: String? = null
 
-            // 1. Sync Routine: use saved home/routine URL or fallback to portalBase + "/Student"
+            // Sync Routine: use saved routine URL or fallback to portalBase + "/Student"
             val routineUrl = if (prefs.routineUrl.isNotBlank()) prefs.routineUrl.trim() else "$portalBaseUrl/Student"
             UniTrackLogger.d("PortalSyncWorker: Syncing routine from '$routineUrl'")
 
@@ -99,7 +96,6 @@ class PortalSyncWorker(
                 if (parserResult.data.isNotEmpty()) {
                     routineDao.replaceAllRoutines(parserResult.data)
                     routineSavedCount = parserResult.data.size
-                    // Save routine URL if we synced from /Student successfully
                     if (prefs.routineUrl.isBlank() && routineResult.url.isNotBlank()) {
                         prefsRepo.updateRoutineUrl(routineResult.url)
                     }
@@ -110,47 +106,14 @@ class PortalSyncWorker(
                 parseErrorMessage = routineResult.errorMessage ?: "Failed to load routine page"
             }
 
-            // 2. Sync Attendance (optional if attendanceUrl has been captured)
-            val attendanceUrl = prefs.attendanceUrl.trim()
-            if (attendanceUrl.isNotBlank()) {
-                UniTrackLogger.d("PortalSyncWorker: Syncing attendance from '$attendanceUrl'")
-                val attendanceResult = HeadlessWebViewSyncHelper.loadPageAndCaptureHtml(context, attendanceUrl)
-
-                if (attendanceResult.isLoginDetected) {
-                    UniTrackLogger.w("PortalSyncWorker: Login redirected during attendance sync.")
-                    postSessionExpiredNotification(context)
-                    prefsRepo.updateSessionActive(false)
-                    return@withContext Result.success(
-                        workDataOf(
-                            KEY_RESULT_MESSAGE to "Login required",
-                            KEY_IS_SUCCESS to false
-                        )
-                    )
-                }
-
-                if (attendanceResult.isSuccess && attendanceResult.html.isNotBlank()) {
-                    val parserResult = AttendanceParser().parse(attendanceResult.html)
-                    if (parserResult.data.isNotEmpty()) {
-                        attendanceDao.syncAttendancePreservingCorrections(parserResult.data)
-                        attendanceSavedCount = parserResult.data.size
-                    }
-                }
-            }
-
-            // Update timestamp, session status & rebuild exact 14-day alarms if any data was parsed
-            if (routineSavedCount > 0 || attendanceSavedCount > 0) {
+            if (routineSavedCount > 0) {
                 prefsRepo.updateLastSyncTimestamp()
                 prefsRepo.updateSessionActive(true)
                 com.example.util.UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(context)
             }
 
-            // Format UI result message
             val resultMessage = when {
-                routineSavedCount > 0 -> {
-                    if (attendanceSavedCount > 0) "Synced $routineSavedCount classes, $attendanceSavedCount courses"
-                    else "Synced $routineSavedCount classes"
-                }
-                attendanceSavedCount > 0 -> "Synced $attendanceSavedCount courses"
+                routineSavedCount > 0 -> "Synced $routineSavedCount classes"
                 parseErrorMessage != null -> "Parse failed: $parseErrorMessage"
                 else -> "Synced 0 classes"
             }
@@ -160,9 +123,8 @@ class PortalSyncWorker(
             Result.success(
                 workDataOf(
                     KEY_RESULT_MESSAGE to resultMessage,
-                    KEY_IS_SUCCESS to (routineSavedCount > 0 || attendanceSavedCount > 0),
-                    KEY_ROUTINE_COUNT to routineSavedCount,
-                    KEY_ATTENDANCE_COUNT to attendanceSavedCount
+                    KEY_IS_SUCCESS to (routineSavedCount > 0),
+                    KEY_ROUTINE_COUNT to routineSavedCount
                 )
             )
         } catch (e: Exception) {
@@ -181,24 +143,20 @@ class PortalSyncWorker(
     }
 
     private fun postSessionExpiredNotification(ctx: Context) {
-        val channelId = "unitrack_sync_channel"
         val notificationManager = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "session_expired_channel"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "Portal Sync & Session",
+                "Session Alerts",
                 NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notifications regarding AIUB portal session status and background synchronization"
-            }
+            )
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Check POST_NOTIFICATIONS permission on Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                UniTrackLogger.w("POST_NOTIFICATIONS permission not granted. Skipping system notification.")
                 return
             }
         }
@@ -220,7 +178,6 @@ class PortalSyncWorker(
             .build()
 
         notificationManager.notify(NOTIFICATION_ID_SESSION, notification)
-        UniTrackLogger.d("PortalSyncWorker: Session expired notification posted.")
     }
 
     companion object {
@@ -231,7 +188,6 @@ class PortalSyncWorker(
         const val KEY_RESULT_MESSAGE = "result_message"
         const val KEY_IS_SUCCESS = "is_success"
         const val KEY_ROUTINE_COUNT = "routine_count"
-        const val KEY_ATTENDANCE_COUNT = "attendance_count"
 
         fun schedulePeriodicSync(context: Context) {
             val constraints = Constraints.Builder()
@@ -248,7 +204,6 @@ class PortalSyncWorker(
                 ExistingPeriodicWorkPolicy.KEEP,
                 periodicRequest
             )
-            UniTrackLogger.d("Scheduled periodic sync (12h interval, network connected)")
         }
 
         fun createOneTimeWorkRequest(): androidx.work.OneTimeWorkRequest {
@@ -263,13 +218,11 @@ class PortalSyncWorker(
 
         fun triggerManualSync(context: Context) {
             val oneTimeRequest = createOneTimeWorkRequest()
-
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME_ONETIME,
                 ExistingWorkPolicy.REPLACE,
                 oneTimeRequest
             )
-            UniTrackLogger.d("Triggered manual sync (ExistingWorkPolicy.REPLACE)")
         }
     }
 }

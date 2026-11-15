@@ -6,7 +6,6 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.example.data.local.dao.AttendanceDao
 import com.example.data.local.dao.CapturedPageDao
 import com.example.data.local.dao.CourseItemDao
 import com.example.data.local.dao.CourseSettingDao
@@ -15,7 +14,6 @@ import com.example.data.local.dao.NoticeDao
 import com.example.data.local.dao.ResultDao
 import com.example.data.local.dao.RoutineDao
 import com.example.data.local.dao.TaskDao
-import com.example.data.local.entity.AttendanceEntity
 import com.example.data.local.entity.CapturedPageEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseItemEntity
@@ -28,7 +26,6 @@ import com.example.data.local.entity.TaskEntity
 @Database(
     entities = [
         ClassRoutineEntity::class,
-        AttendanceEntity::class,
         ResultEntity::class,
         NoticeEntity::class,
         TaskEntity::class,
@@ -37,13 +34,12 @@ import com.example.data.local.entity.TaskEntity
         CourseItemEntity::class,
         DownloadedFileEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class UniTrackDatabase : RoomDatabase() {
 
     abstract fun routineDao(): RoutineDao
-    abstract fun attendanceDao(): AttendanceDao
     abstract fun resultDao(): ResultDao
     abstract fun noticeDao(): NoticeDao
     abstract fun taskDao(): TaskDao
@@ -161,6 +157,12 @@ abstract class UniTrackDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `attendance_records`")
+            }
+        }
+
         fun getDatabase(context: Context): UniTrackDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -168,7 +170,7 @@ abstract class UniTrackDatabase : RoomDatabase() {
                     UniTrackDatabase::class.java,
                     "unitrack_aiub.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                 INSTANCE = instance
                 instance

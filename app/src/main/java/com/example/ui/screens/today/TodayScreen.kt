@@ -636,70 +636,6 @@ fun TodayScreen(
                     }
                 }
             }
-
-            // SEGMENT 5: ATTENDANCE ALERT CARD (if any course is below threshold)
-            if (uiState.attendanceAlerts.isNotEmpty()) {
-                item {
-                    GlassCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = dimens.Space16
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(dimens.Space8)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.WarningAmber,
-                                    contentDescription = "Attendance Warning",
-                                    tint = colors.warning,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Text(
-                                    text = "ATTENDANCE ALERT",
-                                    style = typography.labelBadge,
-                                    color = colors.warning,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(dimens.Space8))
-
-                            uiState.attendanceAlerts.forEach { alert ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = dimens.Space4),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = alert.courseName,
-                                            style = typography.body,
-                                            color = colors.textPrimary,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Text(
-                                            text = "${alert.attendedCount}/${alert.totalClasses} classes attended",
-                                            style = typography.meta,
-                                            color = colors.textSecondary,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-
-                                    Text(
-                                        text = "${alert.percentage.toInt()}%",
-                                        style = typography.sectionTitle,
-                                        color = colors.danger,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -707,7 +643,6 @@ fun TodayScreen(
     uiState.selectedClass?.let { routine ->
         ClassDetailSheet(
             routine = routine,
-            attendance = uiState.selectedClassAttendance,
             tasks = uiState.selectedClassTasks,
             isReminderEnabled = uiState.selectedClassReminderEnabled,
             onToggleReminder = { enabled -> viewModel.toggleCourseReminder(enabled) },

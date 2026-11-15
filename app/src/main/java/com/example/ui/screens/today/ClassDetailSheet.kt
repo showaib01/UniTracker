@@ -1,6 +1,5 @@
 package com.example.ui.screens.today
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,20 +15,17 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
-import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SheetState
@@ -45,13 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
-import com.example.data.local.entity.AttendanceEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseSettingEntity
 import com.example.data.local.entity.TaskEntity
@@ -61,13 +54,12 @@ import com.example.ui.theme.UniTrackTheme
 import com.example.util.DateTimeUtils
 
 /**
- * Editorial modal bottom sheet for displaying class details, attendance, tasks, and Google Drive notes.
+ * Editorial modal bottom sheet for displaying class details, tasks, and Google Drive notes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClassDetailSheet(
     routine: ClassRoutineEntity,
-    attendance: AttendanceEntity?,
     tasks: List<TaskEntity>,
     isReminderEnabled: Boolean,
     onToggleReminder: (Boolean) -> Unit,
@@ -109,43 +101,96 @@ fun ClassDetailSheet(
                 .padding(horizontal = dimens.ScreenPadding)
                 .padding(bottom = 32.dp)
         ) {
-            // Header
+            // Header Row: Course Code badge + Time Pill + Room Pill
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = routine.courseName,
-                        style = typography.heroCourseTitle,
-                        color = colors.textPrimary
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = colors.accentCyan.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(dimens.PillRadius)
                     ) {
                         Text(
-                            text = "Sec ${routine.section}",
-                            style = typography.meta,
-                            color = colors.textSecondary
-                        )
-                        TimePill(
-                            timeRangeText = DateTimeUtils.formatTimeRange12h(routine.startTime, routine.endTime)
-                        )
-                        RoomPill(
-                            roomText = routine.room
+                            text = routine.courseCode.ifBlank { "COURSE" },
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = typography.labelBadge,
+                            color = colors.accentCyan,
+                            fontWeight = FontWeight.Bold
                         )
                     }
+
+                    TimePill(timeRangeText = DateTimeUtils.formatTimeRange12h(routine.startTime, routine.endTime))
+                }
+
+                RoomPill(roomText = routine.room)
+            }
+
+            Spacer(modifier = Modifier.height(dimens.Space12))
+
+            // Course Name (22sp Semibold)
+            Text(
+                text = routine.courseName,
+                style = typography.screenTitle,
+                color = colors.textPrimary,
+                fontSize = 22.sp
+            )
+
+            Spacer(modifier = Modifier.height(dimens.Space4))
+
+            // Section & Faculty
+            val sectionText = "Section: ${routine.section}"
+            val facultyText = if (!routine.faculty.isBlank()) " · ${routine.faculty}" else ""
+            Text(
+                text = "$sectionText$facultyText",
+                style = typography.meta,
+                color = colors.textSecondary
+            )
+
+            Spacer(modifier = Modifier.height(dimens.Space20))
+
+            // Action Bar (Reminders Toggle + Open Course Button)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Reminder toggle pill
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(dimens.PillRadius))
+                        .background(if (isReminderEnabled) colors.accentCyan.copy(alpha = 0.15f) else colors.surfaceField)
+                        .border(dimens.HairlineBorder, if (isReminderEnabled) colors.accentCyan else colors.cardBorder, RoundedCornerShape(dimens.PillRadius))
+                        .clickable { onToggleReminder(!isReminderEnabled) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .testTag("toggle_reminder_button"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isReminderEnabled) Icons.Outlined.NotificationsActive else Icons.Outlined.NotificationsOff,
+                        contentDescription = null,
+                        tint = if (isReminderEnabled) colors.accentCyan else colors.textSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = if (isReminderEnabled) "Reminders On" else "Muted",
+                        style = typography.labelBadge,
+                        color = if (isReminderEnabled) colors.accentCyan else colors.textSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 if (onOpenCourse != null) {
                     val key = CourseSettingEntity.makeKey(routine.courseName, routine.section)
-                    Box(
+                    Surface(
+                        color = colors.accentCyan.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(dimens.PillRadius),
                         modifier = Modifier
-                            .border(dimens.HairlineBorder, colors.accentCyan.copy(alpha = 0.4f), RoundedCornerShape(dimens.PillRadius))
-                            .background(colors.accentCyan.copy(alpha = 0.12f), RoundedCornerShape(dimens.PillRadius))
                             .clickable {
                                 onDismiss()
                                 onOpenCourse(key)
@@ -162,181 +207,53 @@ fun ClassDetailSheet(
                 }
             }
 
-            // Attendance line if available
-            if (attendance != null && attendance.totalClasses > 0) {
-                Spacer(modifier = Modifier.height(8.dp))
-                val isBelowThreshold = attendance.percentage < 80f
-                val attendanceColor = if (isBelowThreshold) colors.warning else colors.success
+            Spacer(modifier = Modifier.height(dimens.Space20))
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(dimens.BoxRadius))
-                        .border(dimens.HairlineBorder, colors.cardBorder, RoundedCornerShape(dimens.BoxRadius))
-                        .background(colors.surfaceField)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(attendanceColor)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(
-                            R.string.attendance_attended_summary,
-                            attendance.attendedCount,
-                            attendance.totalClasses,
-                            attendance.percentage.toInt()
-                        ),
-                        style = typography.meta,
-                        color = colors.textPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(dimens.RhythmMedium))
-
-            // Row of 3 quiet action buttons: Notes, Tasks, Reminder
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                QuietActionButton(
-                    icon = Icons.Outlined.Folder,
-                    label = stringResource(R.string.class_action_notes),
-                    isActive = false,
-                    onClick = { },
-                    modifier = Modifier.weight(1f)
-                )
-
-                QuietActionButton(
-                    icon = Icons.Outlined.CheckCircle,
-                    label = stringResource(R.string.class_action_tasks),
-                    isActive = false,
-                    onClick = { isAddingTask = true },
-                    modifier = Modifier.weight(1f)
-                )
-
-                val bellIcon = if (isReminderEnabled) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff
-                QuietActionButton(
-                    icon = bellIcon,
-                    label = stringResource(R.string.class_action_reminder),
-                    isActive = isReminderEnabled,
-                    onClick = { onToggleReminder(!isReminderEnabled) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("toggle_class_reminder")
-                )
-            }
-
-            Spacer(modifier = Modifier.height(dimens.RhythmMedium))
-
-            // NOTES section
-            Text(
-                text = stringResource(R.string.class_action_notes).uppercase(),
-                style = typography.sectionHeaderLabel,
-                color = colors.sand
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Surface(
-                color = colors.surfaceField,
-                shape = RoundedCornerShape(dimens.BoxRadius),
-                border = androidx.compose.foundation.BorderStroke(dimens.HairlineBorder, colors.cardBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text(
-                        text = stringResource(R.string.notes_connect_drive_hint),
-                        style = typography.meta,
-                        color = colors.textSecondary
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { },
-                            enabled = false,
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(stringResource(R.string.notes_add_note), fontSize = 12.sp)
-                        }
-
-                        OutlinedButton(
-                            onClick = { },
-                            enabled = false,
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(stringResource(R.string.notes_open_drive), fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(dimens.RhythmMedium))
-
-            // TASKS section
+            // TASKS SECTION
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.class_action_tasks).uppercase(),
+                    text = "TASKS FOR THIS COURSE",
                     style = typography.sectionHeaderLabel,
                     color = colors.sand
                 )
-                Text(
-                    text = "+ ${stringResource(R.string.tasks_add_task)}",
-                    style = typography.meta.copy(fontWeight = FontWeight.Medium, color = colors.accentCyan),
-                    modifier = Modifier
-                        .clickable { isAddingTask = !isAddingTask }
-                        .padding(4.dp)
-                        .testTag("add_task_trigger")
-                )
+
+                IconButton(
+                    onClick = { isAddingTask = !isAddingTask },
+                    modifier = Modifier.size(32.dp).testTag("add_task_toggle")
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = "Add Task",
+                        tint = colors.accentCyan
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(dimens.Space8))
 
             if (isAddingTask) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
                         value = newTaskTitle,
                         onValueChange = { newTaskTitle = it },
-                        placeholder = { Text("Task description...", fontSize = 13.sp, color = colors.textSecondary) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("new_task_input"),
+                        placeholder = { Text("Task description...", color = colors.textSecondary) },
                         singleLine = true,
+                        modifier = Modifier.weight(1f).testTag("input_quick_task"),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = colors.textPrimary,
-                            unfocusedTextColor = colors.textPrimary,
-                            focusedContainerColor = colors.surfaceField,
-                            unfocusedContainerColor = colors.surfaceField,
                             focusedBorderColor = colors.accentCyan,
                             unfocusedBorderColor = colors.cardBorder
                         )
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    OutlinedButton(
+
+                    IconButton(
                         onClick = {
                             if (newTaskTitle.isNotBlank()) {
                                 onAddTask(newTaskTitle.trim())
@@ -344,107 +261,62 @@ fun ClassDetailSheet(
                                 isAddingTask = false
                             }
                         },
-                        shape = RoundedCornerShape(dimens.BoxRadius),
-                        modifier = Modifier.height(48.dp)
+                        modifier = Modifier.testTag("submit_quick_task")
                     ) {
-                        Text("Add", fontSize = 13.sp, color = colors.accentCyan)
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = "Save Task",
+                            tint = colors.accentCyan
+                        )
                     }
                 }
+                Spacer(modifier = Modifier.height(dimens.Space12))
             }
 
             if (tasks.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.no_upcoming_deadlines),
+                    text = "No tasks added for this class yet.",
                     style = typography.meta,
                     color = colors.textSecondary,
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
             } else {
-                tasks.forEach { task ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 5.dp)
-                            .clickable { onToggleTask(task, !task.isCompleted) },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tasks.forEach { task ->
+                        val isDone = task.status == "DONE"
+                        Row(
                             modifier = Modifier
-                                .size(18.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .border(
-                                    dimens.HairlineBorder,
-                                    if (task.isCompleted) colors.accentCyan else colors.textSecondary,
-                                    RoundedCornerShape(4.dp)
-                                )
-                                .background(if (task.isCompleted) colors.accentCyan else colors.surfaceField),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(dimens.BoxRadius))
+                                .background(colors.surfaceField)
+                                .clickable { onToggleTask(task, !isDone) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            if (task.isCompleted) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Outlined.Check,
+                                    imageVector = if (isDone) Icons.Outlined.Check else Icons.Outlined.RadioButtonUnchecked,
                                     contentDescription = null,
-                                    tint = colors.surfaceSheet,
-                                    modifier = Modifier.size(13.dp)
+                                    tint = if (isDone) colors.accentCyan else colors.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = task.title,
+                                    style = typography.body,
+                                    color = if (isDone) colors.textSecondary else colors.textPrimary,
+                                    textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
+                                    fontSize = 13.sp
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = task.title,
-                            style = typography.meta.copy(
-                                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
-                            ),
-                            color = if (task.isCompleted) colors.textSecondary else colors.textPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun QuietActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    isActive: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val colors = UniTrackTheme.colors
-    val typography = UniTrackTheme.typography
-    val dimens = UniTrackTheme.dimens
-
-    val bgColor = if (isActive) colors.accentCyan.copy(alpha = 0.12f) else colors.surfaceField
-    val borderColor = if (isActive) colors.accentCyan else colors.cardBorder
-    val contentColor = if (isActive) colors.accentCyan else colors.textPrimary
-
-    Surface(
-        onClick = onClick,
-        color = bgColor,
-        shape = RoundedCornerShape(dimens.BoxRadius),
-        border = androidx.compose.foundation.BorderStroke(dimens.HairlineBorder, borderColor),
-        modifier = modifier.height(48.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = label,
-                style = typography.meta.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-                color = contentColor
-            )
         }
     }
 }

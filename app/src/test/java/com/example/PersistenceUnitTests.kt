@@ -43,7 +43,6 @@ class PersistenceUnitTests {
     @Test
     fun testFreshDatabaseIsEmpty() = runBlocking {
         assertTrue("Routine table should be empty on fresh install", db.routineDao().getAllRoutinesDirect().isEmpty())
-        assertTrue("Attendance table should be empty on fresh install", db.attendanceDao().getAllAttendanceDirect().isEmpty())
         assertTrue("Notice table should be empty on fresh install", db.noticeDao().getAllNotices().first().isEmpty())
         assertTrue("Result table should be empty on fresh install", db.resultDao().getAllResults().first().isEmpty())
         assertTrue("Course items table should be empty on fresh install", db.courseItemDao().getAllItems().first().isEmpty())
@@ -51,7 +50,6 @@ class PersistenceUnitTests {
 
     @Test
     fun testSyncReplacesPortalRowsPerWeekdayAndKeepsUserItems() = runBlocking {
-        // User enters a custom quiz item
         val userItem = CourseItemEntity(
             courseKey = "cse1101_a",
             courseName = "COMPUTER PROGRAMMING",
@@ -65,7 +63,6 @@ class PersistenceUnitTests {
         )
         db.courseItemDao().insertItem(userItem)
 
-        // Portal sync returns Monday class
         val portalRoutine = ClassRoutineEntity(
             courseCode = "CSE1101",
             courseName = "COMPUTER PROGRAMMING",
@@ -104,7 +101,6 @@ class PersistenceUnitTests {
         )
         db.routineDao().insertRoutines(listOf(initialRoutine))
 
-        // Empty / failed parse
         db.routineDao().syncRoutinesPerDay(emptyList())
 
         val routines = db.routineDao().getAllRoutinesDirect()
@@ -128,7 +124,6 @@ class PersistenceUnitTests {
         db.clearAllTables()
 
         assertTrue("Routine table should be empty after clearAllTables", db.routineDao().getAllRoutinesDirect().isEmpty())
-        assertTrue("Attendance table should be empty after clearAllTables", db.attendanceDao().getAllAttendanceDirect().isEmpty())
         assertTrue("Course items table should be empty after clearAllTables", db.courseItemDao().getAllItems().first().isEmpty())
     }
 

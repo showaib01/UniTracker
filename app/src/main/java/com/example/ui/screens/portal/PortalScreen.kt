@@ -16,11 +16,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -34,27 +29,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -69,10 +55,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,7 +72,8 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
 import com.example.data.auth.CredentialStore
-import com.example.data.auth.TesseractCaptchaSolver
+import com.example.data.auth.LoginResult
+import com.example.data.auth.PortalAuth
 import com.example.data.download.CourseDownloadManager
 import com.example.data.local.entity.CourseSettingEntity
 import com.example.data.parser.PortalSelectorConfig
@@ -96,7 +81,6 @@ import com.example.ui.components.GlassCard
 import com.example.ui.theme.UniTrackTheme
 import com.example.util.UniTrackLogger
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -134,7 +118,6 @@ fun PortalScreen(
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as com.example.UniTrackApplication
-    val scope = rememberCoroutineScope()
     val colors = UniTrackTheme.colors
     val typography = UniTrackTheme.typography
     val uiState by viewModel.uiState.collectAsState()
@@ -160,20 +143,49 @@ fun PortalScreen(
 
     var pendingDownload by remember { mutableStateOf<DownloadPendingParams?>(null) }
     var showFolderPickerSheet by remember { mutableStateOf(false) }
+    var isSigningIn by remember { mutableStateOf(false) }
 
-    // Toolbar collapse/expand state (default collapsed)
-    var isToolbarExpanded by remember { mutableStateOf(false) }
-
-    // Auto-login attempt tracking
-    var autoLoginAttempts by remember { mutableIntStateOf(0) }
-    var lastVisitedUrl by remember { mutableStateOf("") }
+    // Native auto-login on startup if credentials exist (at most once)
+    LaunchedEffect(Unit) {
+        val credStore = CredentialStore(context)
+        if (credStore.hasCredentials()) {
+            val creds = credStore.load()
+            if (creds != null) {
+                isSigningIn = true
+                val result = PortalAuth.login(context, creds.first, creds.second)
+                isSigningIn = false
+                when (result) {
+                    is LoginResult.Success -> {
+                        val cookieManager = CookieManager.getInstance()
+                        val webView = PortalWebViewHolder.getWebView()
+                        for (cookieStr in PortalAuth.cookiesForWebView()) {
+                            cookieManager.setCookie("https://portal.aiub.edu", "$cookieStr; Path=/")
+                        }
+                        if (webView != null) {
+                            cookieManager.setAcceptThirdPartyCookies(webView, true)
+                        }
+                        cookieManager.flush()
+                        webView?.loadUrl(result.landingUrl)
+                        viewModel.onPageFinished(result.landingUrl, "AIUB Portal", false)
+                    }
+                    is LoginResult.WrongCredentials -> {
+                        credStore.clear()
+                        Toast.makeText(context, "Saved login was wrong, please log in again", Toast.LENGTH_LONG).show()
+                    }
+                    is LoginResult.Locked -> {
+                        Toast.makeText(context, "Account locked. Please log in manually.", Toast.LENGTH_LONG).show()
+                    }
+                    is LoginResult.CaptchaFailed, is LoginResult.NetworkError -> {
+                        Toast.makeText(context, "Auto-login failed. Please log in manually.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.toastEvent.collectLatest { msg ->
             snackbarHostState.showSnackbar(msg)
-            if (msg.contains("error", ignoreCase = true)) {
-                // Keep error feedback visible
-            }
         }
     }
 
@@ -231,6 +243,7 @@ fun PortalScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier.fillMaxSize().testTag("portal_screen_root")
     ) { innerPadding ->
         Box(
@@ -238,7 +251,7 @@ fun PortalScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 1. Stable WebView in background filling the screen
+            // WebView filling screen
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
@@ -290,13 +303,7 @@ fun PortalScreen(
 
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 super.onPageStarted(view, url, favicon)
-                                url?.let {
-                                    if (it != lastVisitedUrl) {
-                                        autoLoginAttempts = 0
-                                        lastVisitedUrl = it
-                                    }
-                                    viewModel.onPageStarted(it)
-                                }
+                                url?.let { viewModel.onPageStarted(it) }
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -305,16 +312,16 @@ fun PortalScreen(
                                 viewModel.onPageFinished(currentUrlStr, view?.title, view?.canGoBack() ?: false)
 
                                 if (PortalSelectorConfig.isLoginPage(currentUrlStr, null)) {
-                                    // 1. Inject first-login capture listener
+                                    // Inject first-login capture listener using exact selectors input[name=UserName] & input[name=Password]
                                     view?.evaluateJavascript(
                                         """
                                         (function() {
                                             if (window.uniTrackCaptured) return;
                                             window.uniTrackCaptured = true;
-                                            var u = document.querySelector('input[name*="username"], input[name*="Username"], input[id*="username"], input[type="text"]');
-                                            var p = document.querySelector('input[type="password"]');
+                                            var u = document.querySelector('input[name="UserName"]') || document.querySelector('input[name*="username"]');
+                                            var p = document.querySelector('input[name="Password"]') || document.querySelector('input[type="password"]');
                                             var f = document.querySelector('form');
-                                            var btn = document.querySelector('button[type="submit"], input[type="submit"], #btnLogin, .btn-login');
+                                            var btn = document.querySelector('#CaptchaInputText') || document.querySelector('button[type="submit"]');
                                             
                                             function sendCreds() {
                                                 var id = u ? u.value : '';
@@ -329,57 +336,6 @@ fun PortalScreen(
                                         """.trimIndent(),
                                         null
                                     )
-
-                                    // 2. Auto-login if credentials exist
-                                    val credStore = CredentialStore(context)
-                                    if (credStore.hasCredentials()) {
-                                        view?.evaluateJavascript("(function(){ return document.body ? document.body.innerText : ''; })();") { bodyText ->
-                                            val text = bodyText?.lowercase() ?: ""
-                                            val isErrorOnPage = text.contains("invalid student id or password") ||
-                                                    text.contains("invalid user") ||
-                                                    text.contains("incorrect password")
-
-                                            if (isErrorOnPage) {
-                                                UniTrackLogger.w("PortalScreen: Wrong credentials error detected on page. Clearing CredentialStore.")
-                                                credStore.clear()
-                                                autoLoginAttempts = 3
-                                                Toast.makeText(context, "Saved login cleared due to incorrect credentials", Toast.LENGTH_SHORT).show()
-                                            } else if (autoLoginAttempts < 3) {
-                                                autoLoginAttempts++
-                                                val savedCreds = credStore.load()
-                                                if (savedCreds != null) {
-                                                    scope.launch(Dispatchers.Default) {
-                                                        UniTrackLogger.i("PortalScreen: Running auto-login attempt $autoLoginAttempts/3")
-                                                        val captchaAns = TesseractCaptchaSolver().solveCaptcha(context, view, currentUrlStr)
-                                                        if (!captchaAns.isNullOrBlank()) {
-                                                            withContext(Dispatchers.Main) {
-                                                                val (sId, sPass) = savedCreds
-                                                                val escapedId = sId.replace("'", "\\'")
-                                                                val escapedPass = sPass.replace("'", "\\'")
-                                                                val jsSubmit = """
-                                                                    (function() {
-                                                                        var u = document.querySelector('input[name*="username"], input[name*="Username"], input[id*="username"], input[type="text"]');
-                                                                        var p = document.querySelector('input[type="password"]');
-                                                                        var c = document.querySelector('input[name*="captcha"], input[id*="captcha"], input[name*="Captcha"]');
-                                                                        if (u) u.value = '$escapedId';
-                                                                        if (p) p.value = '$escapedPass';
-                                                                        if (c) c.value = '$captchaAns';
-                                                                        var btn = document.querySelector('button[type="submit"], input[type="submit"], #btnLogin, .btn-login');
-                                                                        if (btn) btn.click();
-                                                                        else {
-                                                                            var f = document.querySelector('form');
-                                                                            if (f) f.submit();
-                                                                        }
-                                                                    })();
-                                                                """.trimIndent()
-                                                                view?.evaluateJavascript(jsSubmit, null)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -410,186 +366,27 @@ fun PortalScreen(
                     .testTag("portal_webview")
             )
 
-            // 2. Top Overlay: Toolbar Toggle Handle (Pill with Chevron) + Collapsible Toolbar
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-            ) {
-                // Toggle Handle
+            // Signing in overlay
+            if (isSigningIn) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
+                        .fillMaxSize()
+                        .background(colors.background.copy(alpha = 0.8f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Surface(
-                        color = colors.surfaceSheet.copy(alpha = 0.85f),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .testTag("portal_toolbar_toggle")
-                            .clickable { isToolbarExpanded = !isToolbarExpanded }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    GlassCard(modifier = Modifier.padding(24.dp)) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(
-                                imageVector = if (isToolbarExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Toggle Toolbar",
-                                tint = colors.textPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            CircularProgressIndicator(color = colors.accentCyan)
                             Text(
-                                text = if (isToolbarExpanded) "Hide Menu" else "Portal Menu",
-                                style = typography.meta,
-                                color = colors.textPrimary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                text = "Signing in securely...",
+                                style = typography.body,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary
                             )
-                        }
-                    }
-                }
-
-                // Collapsible Portal Top Toolbar
-                AnimatedVisibility(
-                    visible = isToolbarExpanded,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 4.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = {
-                                            val webView = PortalWebViewHolder.getWebView()
-                                            if (webView?.canGoBack() == true) {
-                                                webView.goBack()
-                                            } else {
-                                                onNavigateBack()
-                                            }
-                                        },
-                                        modifier = Modifier.testTag("portal_back_button")
-                                    ) {
-                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                                    }
-
-                                    IconButton(
-                                        onClick = {
-                                            val webView = PortalWebViewHolder.getWebView()
-                                            webView?.loadUrl(uiState.currentUrl)
-                                        },
-                                        modifier = Modifier.testTag("portal_refresh_button")
-                                    ) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "Reload")
-                                    }
-
-                                    IconButton(
-                                        onClick = {
-                                            val webView = PortalWebViewHolder.getWebView()
-                                            webView?.loadUrl("https://portal.aiub.edu/")
-                                        },
-                                        modifier = Modifier.testTag("portal_home_button")
-                                    ) {
-                                        Icon(Icons.Default.Home, contentDescription = "Portal Home")
-                                    }
-                                }
-
-                                // Active Course Folder Chip in Toolbar when in download mode
-                                if (activeCourseFolder != null) {
-                                    Surface(
-                                        color = colors.accentCyan.copy(alpha = 0.15f),
-                                        shape = RoundedCornerShape(20.dp),
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Folder,
-                                                contentDescription = null,
-                                                tint = colors.accentCyan,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = activeCourseFolder!!.second.take(16) + if (activeCourseFolder!!.second.length > 16) "..." else "",
-                                                style = typography.meta,
-                                                color = colors.accentCyan,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Progress Bar
-                            if (uiState.isLoading) {
-                                LinearProgressIndicator(
-                                    progress = { uiState.progress / 100f },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(3.dp),
-                                    color = colors.accentCyan
-                                )
-                            }
-
-                            // Session Status & Domain Information Bar
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(colors.surfaceField)
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = "SSL Secure",
-                                        tint = colors.statusSuccess,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = uiState.currentUrl.removePrefix("https://").take(32) + if (uiState.currentUrl.length > 32) "..." else "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 11.sp,
-                                        color = colors.textSecondary
-                                    )
-                                }
-
-                                Surface(
-                                    color = if (uiState.isSessionActive) colors.statusSuccess.copy(alpha = 0.15f) else colors.statusDanger.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        text = if (uiState.isSessionActive) "Active Session" else "Not Logged In",
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (uiState.isSessionActive) colors.statusSuccess else colors.statusDanger,
-                                        fontSize = 10.sp
-                                    )
-                                }
-                            }
                         }
                     }
                 }
@@ -712,7 +509,7 @@ private fun configureWebView(
 
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
-    settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+    settings.userAgentString = PortalAuth.DESKTOP_USER_AGENT
 
     settings.allowFileAccess = false
     settings.allowContentAccess = false

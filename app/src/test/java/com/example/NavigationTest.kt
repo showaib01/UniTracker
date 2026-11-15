@@ -39,14 +39,10 @@ class NavigationTest {
 
     @Test
     fun testNavigationHomeToBellToTasksAndReturnHome() {
-        // Initially on Home (Today)
         composeTestRule.onNodeWithTag("top_bar_bell_icon").assertIsDisplayed()
-
-        // Tap bell icon -> navigates to Tasks tab
         composeTestRule.onNodeWithTag("top_bar_bell_icon").performClick()
         composeTestRule.waitForIdle()
 
-        // Tap Home bottom bar item -> returns to Home
         composeTestRule.onNodeWithTag("nav_item_today").performClick()
         composeTestRule.waitForIdle()
 
@@ -54,7 +50,7 @@ class NavigationTest {
     }
 
     @Test
-    fun testNavigationHomeToSettingsToSubScreenAndBack() {
+    fun testSettingsToPortalToHomeToSettingsShowsSettingsRoot() {
         // Tap Settings bottom bar item
         composeTestRule.onNodeWithTag("nav_item_more").performClick()
         composeTestRule.waitForIdle()
@@ -63,19 +59,32 @@ class NavigationTest {
         composeTestRule.onNodeWithTag("settings_account_row").performClick()
         composeTestRule.waitForIdle()
 
-        // Toggle portal toolbar open
-        composeTestRule.onNodeWithTag("portal_toolbar_toggle").performClick()
-        composeTestRule.waitForIdle()
-
-        // Tap back button on Portal sub-screen
-        composeTestRule.onNodeWithTag("portal_back_button").performClick()
-        composeTestRule.waitForIdle()
-
-        // Tap Home bottom bar item -> returns to Home
+        // Tap Home bottom bar item -> goes to Today
         composeTestRule.onNodeWithTag("nav_item_today").performClick()
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag("top_bar_bell_icon").assertIsDisplayed()
+        // Tap Settings bottom bar item -> should show Settings root, not Portal
+        composeTestRule.onNodeWithTag("nav_item_more").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("settings_account_row").assertIsDisplayed()
+    }
+
+    @Test
+    fun testSettingsToPortalToSettingsShowsSettingsRootFirstTap() {
+        // Tap Settings bottom bar item
+        composeTestRule.onNodeWithTag("nav_item_more").performClick()
+        composeTestRule.waitForIdle()
+
+        // Tap Account row in Settings -> opens Portal sub-screen
+        composeTestRule.onNodeWithTag("settings_account_row").performClick()
+        composeTestRule.waitForIdle()
+
+        // Tap Settings bottom bar item -> should show Settings root on first tap
+        composeTestRule.onNodeWithTag("nav_item_more").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("settings_account_row").assertIsDisplayed()
     }
 
     @Test

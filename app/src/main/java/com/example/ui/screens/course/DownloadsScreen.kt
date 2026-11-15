@@ -167,7 +167,6 @@ fun DownloadsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
         ) {
             // Header
             Row(

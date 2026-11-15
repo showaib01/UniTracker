@@ -245,15 +245,23 @@ fun MainAppScreen(
         else -> "AIUB Student"
     }
 
-    // Unified Top-Level Navigation Helper with Settings Sub-Screen Popfix
+    // Unified Top-Level Navigation Helper with Settings Sub-Screen Popfix & non-tab pop loop
     val navigateToTopLevelTab: (String) -> Unit = { route ->
+        val currentDestRoute = navController.currentBackStackEntry?.destination?.route
+        val tabRoutes = bottomNavItems.map { it.route }
+
         if (route == Screen.More.route && isSettingsSubRoute) {
             navController.popBackStack(Screen.More.route, inclusive = false)
         } else if (currentRoute == route) {
             navController.popBackStack(route, inclusive = false)
         } else {
-            navController.navigate(route) {
-                popUpTo(navController.graph.findStartDestination().id) {
+            val controller = navController
+            while (controller.currentBackStackEntry?.destination?.route != null &&
+                controller.currentBackStackEntry?.destination?.route !in tabRoutes) {
+                if (!controller.popBackStack()) break
+            }
+            controller.navigate(route) {
+                popUpTo(controller.graph.findStartDestination().id) {
                     saveState = true
                 }
                 launchSingleTop = true

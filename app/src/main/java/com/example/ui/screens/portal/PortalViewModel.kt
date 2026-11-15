@@ -1,14 +1,13 @@
 package com.example.ui.screens.portal
 
 import android.app.Application
-import android.net.Uri
 import android.webkit.CookieManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.UniTrackApplication
+import com.example.data.auth.CredentialStore
 import com.example.data.local.entity.CapturedPageEntity
 import com.example.data.local.preferences.UserPreferencesRepository
-import com.example.data.parser.AttendanceParser
 import com.example.data.parser.PortalSelectorConfig
 import com.example.data.parser.RoutineParser
 import com.example.util.CapturedPageHolder
@@ -42,12 +41,10 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
 
     private val app = application as UniTrackApplication
     private val routineDao = app.database.routineDao()
-    private val attendanceDao = app.database.attendanceDao()
     private val capturedPageDao = app.database.capturedPageDao()
     private val preferencesRepository = app.preferencesRepository
 
     private val routineParser = RoutineParser()
-    private val attendanceParser = AttendanceParser()
 
     private val _uiState = MutableStateFlow(PortalUiState())
     val uiState: StateFlow<PortalUiState> = _uiState.asStateFlow()
@@ -60,7 +57,7 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
             preferencesRepository.userPreferencesFlow.collect { prefs ->
                 _uiState.update { current ->
                     current.copy(
-                        currentUrl = if (current.currentUrl.isBlank()) prefs.portalUrl else current.currentUrl,
+                        currentUrl = if (current.currentUrl.isBlank()) UserPreferencesRepository.DEFAULT_PORTAL_URL else current.currentUrl,
                         studentId = prefs.studentId,
                         rememberStudentId = prefs.rememberStudentId,
                         isSessionActive = prefs.isSessionActive
@@ -166,7 +163,7 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch { preferencesRepository.updateSessionActive(true) }
 
             pendingCredentials?.let { (id, pass) ->
-                com.example.data.auth.CredentialStore(app).save(id, pass)
+                CredentialStore(app).save(id, pass)
                 saveStudentIdPreference(id, true)
                 UniTrackLogger.i("PortalViewModel: Confirmed login! Saved credentials to CredentialStore for $id")
                 pendingCredentials = null
@@ -184,9 +181,6 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * Captures HTML from the live WebView reference on the main thread using evaluateJavascript.
-     */
     fun captureCurrentPage() {
         UniTrackLogger.d("PortalViewModel: captureCurrentPage() tapped")
 
@@ -210,13 +204,7 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        if (PortalSelectorConfig.isLoginPage(url, null)) {
-            UniTrackLogger.w("Warning: Capturing on a login page ($url)")
-        }
-
-        UniTrackLogger.d("PortalViewModel: Calling evaluateJavascript on '$url'")
         webView.evaluateJavascript("(function(){return document.documentElement.outerHTML;})();") { rawJson ->
-            UniTrackLogger.d("PortalViewModel evaluateJavascript returned: length=${rawJson?.length}")
             if (rawJson == null || rawJson.trim() == "null" || rawJson.isBlank()) {
                 val errorMsg = "Capture error: JavaScript returned null or empty DOM."
                 UniTrackLogger.e(errorMsg)
@@ -234,9 +222,6 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
                 return@evaluateJavascript
             }
 
-            UniTrackLogger.i("PortalViewModel: Successfully decoded ${decodedHtml.length} chars of HTML from $url")
-
-            // Update shared state holder immediately
             CapturedPageHolder.update(
                 url = url,
                 title = title,
@@ -244,7 +229,6 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
                 message = "Captured ${decodedHtml.length} characters from $url"
             )
 
-            // Parse & save to Room
             onHtmlCaptured(decodedHtml, url, title)
         }
     }
@@ -252,13 +236,10 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
     private fun onHtmlCaptured(html: String, url: String, title: String) {
         viewModelScope.launch {
             val lowerUrl = url.lowercase()
-
             val isRoutine = lowerUrl.contains("routine") || routineParser.canParse(html)
-            val isAttendance = lowerUrl.contains("attendance") || attendanceParser.canParse(html)
 
             val pageType = when {
                 isRoutine -> "ROUTINE"
-                isAttendance -> "ATTENDANCE"
                 lowerUrl.contains("grade") || lowerUrl.contains("result") -> "RESULTS"
                 lowerUrl.contains("notice") -> "NOTICES"
                 lowerUrl.contains("login") -> "LOGIN"
@@ -273,10 +254,7 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             if (isRoutine) {
-                // Auto-save routine URL for background sync
                 preferencesRepository.updateRoutineUrl(url)
-                UniTrackLogger.i("Auto-saved routine URL: $url")
-
                 val result = routineParser.parse(html)
                 warningsList.addAll(result.warnings)
                 if (result.data.isNotEmpty()) {
@@ -285,27 +263,9 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
                     preferencesRepository.updateSessionActive(true)
                     com.example.util.UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(app)
                     summaryText = "Captured ${html.length} chars: Saved ${result.data.size} classes to Routine & remembered URL!"
-                } else {
-                    summaryText = "Captured ${html.length} chars: 0 classes parsed (${result.warnings.firstOrNull() ?: "check table"})"
-                }
-            } else if (isAttendance) {
-                // Auto-save attendance URL for background sync
-                preferencesRepository.updateAttendanceUrl(url)
-                UniTrackLogger.i("Auto-saved attendance URL: $url")
-
-                val result = attendanceParser.parse(html)
-                warningsList.addAll(result.warnings)
-                if (result.data.isNotEmpty()) {
-                    attendanceDao.syncAttendancePreservingCorrections(result.data)
-                    preferencesRepository.updateLastSyncTimestamp()
-                    preferencesRepository.updateSessionActive(true)
-                    summaryText = "Captured ${html.length} chars: Saved ${result.data.size} courses to Attendance & remembered URL!"
-                } else {
-                    summaryText = "Captured ${html.length} chars: 0 courses parsed (${result.warnings.firstOrNull() ?: "check table"})"
                 }
             }
 
-            // Save to Room captured pages
             val entity = CapturedPageEntity(
                 title = title.ifBlank { "Captured $pageType" },
                 url = url,
@@ -334,14 +294,5 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearCaptureMessage() {
         _uiState.update { it.copy(captureMessage = null, captureWarnings = emptyList()) }
-    }
-
-    fun clearCookies() {
-        CookieManager.getInstance().removeAllCookies {
-            viewModelScope.launch {
-                preferencesRepository.updateSessionActive(false)
-                _toastEvent.emit("Cookies cleared. Session ended.")
-            }
-        }
     }
 }

@@ -151,6 +151,15 @@ fun SettingsScreen(
     val credentialStore = remember { CredentialStore(context) }
     var hasCreds by remember { mutableStateOf(credentialStore.hasCredentials()) }
 
+    val versionName = remember(context) {
+        try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            pInfo.versionName ?: "1.0.1"
+        } catch (_: Exception) {
+            "1.0.1"
+        }
+    }
+
     var upcomingReminders by remember { mutableStateOf<List<ScheduledReminderInfo>>(emptyList()) }
 
     LaunchedEffect(showHealthCheckDialog) {
@@ -439,27 +448,19 @@ fun SettingsScreen(
             title = { Text(stringResource(R.string.settings_language), style = typography.sectionTitle) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("en" to "English", "bn" to "বাংলা (Bangla)").forEach { (lang, label) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    scope.launch { prefsRepo.updateLanguage(lang) }
-                                    showLanguageDialog = false
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = userPrefs.language == lang,
-                                onClick = {
-                                    scope.launch { prefsRepo.updateLanguage(lang) }
-                                    showLanguageDialog = false
-                                },
-                                colors = RadioButtonDefaults.colors(selectedColor = colors.accentCyan)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(label, style = typography.body, color = colors.textPrimary)
-                        }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showLanguageDialog = false },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = true,
+                            onClick = { showLanguageDialog = false },
+                            colors = RadioButtonDefaults.colors(selectedColor = colors.accentCyan)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("English", style = typography.body, color = colors.textPrimary)
                     }
                 }
             },
@@ -725,7 +726,6 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
         ) {
             // Sub-screen header if navigation back is available
             if (onNavigateBack != null) {

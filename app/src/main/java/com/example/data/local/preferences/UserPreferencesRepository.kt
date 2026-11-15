@@ -15,12 +15,9 @@ import kotlinx.coroutines.flow.map
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "unitrack_settings")
 
 data class UserPreferences(
-    val portalUrl: String = "https://portal.aiub.edu/",
     val routineUrl: String = "",
-    val attendanceUrl: String = "",
     val studentId: String = "",
     val rememberStudentId: Boolean = false,
-    val attendanceThreshold: Int = 80,
     val themeMode: String = "SYSTEM",
     val language: String = "en",
     val lastSyncTimestamp: Long = 0L,
@@ -34,12 +31,9 @@ data class UserPreferences(
 class UserPreferencesRepository(private val context: Context) {
 
     private object PreferencesKeys {
-        val PORTAL_URL = stringPreferencesKey("portal_url")
         val ROUTINE_URL = stringPreferencesKey("routine_url")
-        val ATTENDANCE_URL = stringPreferencesKey("attendance_url")
         val STUDENT_ID = stringPreferencesKey("student_id")
         val REMEMBER_STUDENT_ID = booleanPreferencesKey("remember_student_id")
-        val ATTENDANCE_THRESHOLD = intPreferencesKey("attendance_threshold")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val LANGUAGE = stringPreferencesKey("language")
         val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
@@ -52,12 +46,9 @@ class UserPreferencesRepository(private val context: Context) {
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data.map { preferences ->
         UserPreferences(
-            portalUrl = preferences[PreferencesKeys.PORTAL_URL] ?: DEFAULT_PORTAL_URL,
             routineUrl = preferences[PreferencesKeys.ROUTINE_URL] ?: "",
-            attendanceUrl = preferences[PreferencesKeys.ATTENDANCE_URL] ?: "",
             studentId = preferences[PreferencesKeys.STUDENT_ID] ?: "",
             rememberStudentId = preferences[PreferencesKeys.REMEMBER_STUDENT_ID] ?: false,
-            attendanceThreshold = preferences[PreferencesKeys.ATTENDANCE_THRESHOLD] ?: 80,
             themeMode = preferences[PreferencesKeys.THEME_MODE] ?: "SYSTEM",
             language = preferences[PreferencesKeys.LANGUAGE] ?: "en",
             lastSyncTimestamp = preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] ?: 0L,
@@ -69,24 +60,9 @@ class UserPreferencesRepository(private val context: Context) {
         )
     }
 
-    suspend fun updatePortalUrl(url: String) {
-        val sanitized = if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            "https://$url"
-        } else url
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.PORTAL_URL] = sanitized
-        }
-    }
-
     suspend fun updateRoutineUrl(url: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.ROUTINE_URL] = url
-        }
-    }
-
-    suspend fun updateAttendanceUrl(url: String) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.ATTENDANCE_URL] = url
         }
     }
 
@@ -98,12 +74,6 @@ class UserPreferencesRepository(private val context: Context) {
             } else {
                 preferences[PreferencesKeys.STUDENT_ID] = ""
             }
-        }
-    }
-
-    suspend fun updateAttendanceThreshold(threshold: Int) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.ATTENDANCE_THRESHOLD] = threshold.coerceIn(50, 100)
         }
     }
 

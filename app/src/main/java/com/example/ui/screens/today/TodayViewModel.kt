@@ -9,7 +9,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.example.UniTrackApplication
-import com.example.data.local.entity.AttendanceEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseItemEntity
 import com.example.data.local.entity.CourseItemStatus
@@ -66,7 +65,6 @@ data class TodayUiState(
     // Due Soon Items (next 3)
     val dueSoonItems: List<CourseItemEntity> = emptyList(),
     val overdueAndDueTodayCount: Int = 0,
-    val attendanceAlerts: List<AttendanceEntity> = emptyList(),
     val lastSyncedText: String = "Never",
     val isSessionActive: Boolean = false,
     val isSyncing: Boolean = false,
@@ -75,7 +73,6 @@ data class TodayUiState(
     val facultyNamesByCourseKey: Map<String, String> = emptyMap(),
     // Class Detail Sheet
     val selectedClass: ClassRoutineEntity? = null,
-    val selectedClassAttendance: AttendanceEntity? = null,
     val selectedClassTasks: List<TaskEntity> = emptyList(),
     val selectedClassReminderEnabled: Boolean = true,
     // Add/Edit Item Sheet
@@ -92,7 +89,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as UniTrackApplication
     private val routineDao = app.database.routineDao()
-    private val attendanceDao = app.database.attendanceDao()
     private val taskDao = app.database.taskDao()
     private val courseItemDao = app.database.courseItemDao()
     private val courseSettingDao = app.database.courseSettingDao()
@@ -139,9 +135,8 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             combine(
                 routineDao.getAllRoutines(),
                 courseItemDao.getUpcomingActiveItems(10),
-                attendanceDao.getAllAttendance(),
                 settingsAndPrefsFlow
-            ) { routines, dueItems, attendanceList, (settingsList, preferences) ->
+            ) { routines, dueItems, (settingsList, preferences) ->
                 allRoutinesCache = routines
 
                 val today = DateTimeUtils.getCurrentDayOfWeek()
@@ -185,11 +180,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 val tomorrowDay = getTomorrowDayOfWeek(today)
                 val tomorrowClasses = routines.filter { it.dayOfWeek.equals(tomorrowDay, ignoreCase = true) }
                 val firstTomorrow = tomorrowClasses.minByOrNull { it.startTime }
-
-                val threshold = preferences.attendanceThreshold
-                val alerts = attendanceList.filter {
-                    it.totalClasses > 0 && it.percentage < threshold
-                }
 
                 // Count overdue and due today
                 val overdueOrDueTodayCount = dueItems.count {
@@ -236,7 +226,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                         firstClassTomorrow = firstTomorrow,
                         dueSoonItems = dueItems.take(3),
                         overdueAndDueTodayCount = overdueOrDueTodayCount,
-                        attendanceAlerts = alerts,
                         lastSyncedText = lastSync,
                         isSessionActive = preferences.isSessionActive,
                         isOffline = isOffline,
@@ -249,136 +238,17 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun generateWeekDays(allRoutines: List<ClassRoutineEntity>): List<DayChipItem> {
-        val cal = Calendar.getInstance()
-        cal.firstDayOfWeek = Calendar.SUNDAY
-        cal.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
-
-        val todayCal = Calendar.getInstance()
-        val todayDay = SimpleDateFormat("EEEE", Locale.ENGLISH).format(todayCal.time)
-        val todayDate = todayCal.get(Calendar.DAY_OF_MONTH)
-
-        val items = mutableListOf<DayChipItem>()
-        val abbrFormat = SimpleDateFormat("EEE", Locale.ENGLISH)
-        val dayFormat = SimpleDateFormat("EEEE", Locale.ENGLISH)
-        val fullDateFormat = SimpleDateFormat("EEEE, d MMMM", Locale.ENGLISH)
-
-        for (i in 0 until 7) {
-            val dayName = dayFormat.format(cal.time)
-            val abbr = abbrFormat.format(cal.time)
-            val dateNum = cal.get(Calendar.DAY_OF_MONTH).toString()
-            val fullDate = fullDateFormat.format(cal.time)
-            val isToday = dayName.equals(todayDay, ignoreCase = true) && (cal.get(Calendar.DAY_OF_MONTH) == todayDate)
-            val count = allRoutines.count { it.dayOfWeek.equals(dayName, ignoreCase = true) }
-
-            items.add(
-                DayChipItem(
-                    dayOfWeek = dayName,
-                    dayAbbr = abbr,
-                    dateNumber = dateNum,
-                    fullDateFormatted = fullDate,
-                    isToday = isToday,
-                    classCount = count
-                )
-            )
-            cal.add(Calendar.DAY_OF_WEEK, 1)
-        }
-        return items
-    }
-
     fun selectDay(dayOfWeek: String) {
-        val today = DateTimeUtils.getCurrentDayOfWeek()
-        val isToday = dayOfWeek.equals(today, ignoreCase = true)
-        val selectedClasses = allRoutinesCache.filter { it.dayOfWeek.equals(dayOfWeek, ignoreCase = true) }
+        val selectedDayClasses = allRoutinesCache.filter { it.dayOfWeek.equals(dayOfWeek, ignoreCase = true) }
             .sortedBy { it.startTime }
-
-        val weekDayItem = _uiState.value.weekDays.firstOrNull { it.dayOfWeek.equals(dayOfWeek, ignoreCase = true) }
-        val headline = weekDayItem?.fullDateFormatted ?: dayOfWeek
-
+        val today = DateTimeUtils.getCurrentDayOfWeek()
         _uiState.update {
             it.copy(
                 selectedDay = dayOfWeek,
-                selectedDayHeadline = headline,
-                isViewingToday = isToday,
-                classesForSelectedDay = selectedClasses
+                selectedDayHeadline = getDayHeadline(dayOfWeek),
+                isViewingToday = dayOfWeek.equals(today, ignoreCase = true),
+                classesForSelectedDay = selectedDayClasses
             )
-        }
-    }
-
-    fun selectToday() {
-        val today = DateTimeUtils.getCurrentDayOfWeek()
-        selectDay(today)
-    }
-
-    fun selectPreviousDay() {
-        val days = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
-        val currentIndex = days.indexOfFirst { it.equals(_uiState.value.selectedDay, ignoreCase = true) }
-        if (currentIndex >= 0) {
-            val prevIndex = if (currentIndex == 0) days.size - 1 else currentIndex - 1
-            selectDay(days[prevIndex])
-        }
-    }
-
-    fun selectNextDay() {
-        val days = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
-        val currentIndex = days.indexOfFirst { it.equals(_uiState.value.selectedDay, ignoreCase = true) }
-        if (currentIndex >= 0) {
-            val nextIndex = (currentIndex + 1) % days.size
-            selectDay(days[nextIndex])
-        }
-    }
-
-    fun toggleTheme() {
-        viewModelScope.launch {
-            val currentMode = _uiState.value.themeMode
-            val newMode = if (currentMode == "LIGHT") "DARK" else "LIGHT"
-            preferencesRepository.updateThemeMode(newMode)
-            _uiState.update { it.copy(themeMode = newMode) }
-        }
-    }
-
-    private fun getTomorrowDayOfWeek(currentDay: String): String {
-        val days = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
-        val currentIndex = days.indexOfFirst { it.equals(currentDay, ignoreCase = true) }
-        return if (currentIndex >= 0) {
-            days[(currentIndex + 1) % days.size]
-        } else "Sunday"
-    }
-
-    fun triggerSync() {
-        if (_uiState.value.isSyncing) return
-        _uiState.update { it.copy(isSyncing = true, syncMessage = "Syncing schedule...") }
-
-        val request = PortalSyncWorker.createOneTimeWorkRequest()
-        workManager.enqueue(request)
-
-        syncObservationJob?.cancel()
-        syncObservationJob = viewModelScope.launch {
-            workManager.getWorkInfoByIdFlow(request.id).collect { workInfo ->
-                if (workInfo != null) {
-                    when (workInfo.state) {
-                        WorkInfo.State.RUNNING -> {
-                            _uiState.update { it.copy(isSyncing = true) }
-                        }
-                        WorkInfo.State.SUCCEEDED -> {
-                            val msg = workInfo.outputData.getString("SYNC_MESSAGE") ?: "Synced successfully"
-                            _uiState.update { it.copy(isSyncing = false, syncMessage = msg) }
-                            delay(3000)
-                            _uiState.update { it.copy(syncMessage = null) }
-                        }
-                        WorkInfo.State.FAILED -> {
-                            val err = workInfo.outputData.getString("SYNC_ERROR") ?: "Sync failed"
-                            _uiState.update { it.copy(isSyncing = false, syncMessage = err) }
-                            delay(4000)
-                            _uiState.update { it.copy(syncMessage = null) }
-                        }
-                        WorkInfo.State.CANCELLED -> {
-                            _uiState.update { it.copy(isSyncing = false, syncMessage = null) }
-                        }
-                        else -> {}
-                    }
-                }
-            }
         }
     }
 
@@ -387,7 +257,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     selectedClass = null,
-                    selectedClassAttendance = null,
                     selectedClassTasks = emptyList()
                 )
             }
@@ -395,14 +264,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            val allAttendance = attendanceDao.getAllAttendanceDirect()
-            val att = allAttendance.firstOrNull {
-                it.courseName.equals(routine.courseName, ignoreCase = true) &&
-                        it.section.equals(routine.section, ignoreCase = true)
-            } ?: allAttendance.firstOrNull {
-                it.courseName.equals(routine.courseName, ignoreCase = true)
-            }
-
             val allTasks = taskDao.getAllTasksDirect()
             val tasks = allTasks.filter {
                 it.courseName.equals(routine.courseName, ignoreCase = true)
@@ -415,7 +276,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     selectedClass = routine,
-                    selectedClassAttendance = att,
                     selectedClassTasks = tasks,
                     selectedClassReminderEnabled = isRemEnabled
                 )
@@ -429,7 +289,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             val key = CourseSettingEntity.makeKey(routine.courseName, routine.section)
             val existing = courseSettingDao.getSettingDirect(key)
             if (existing != null) {
-                courseSettingDao.setNotificationsEnabled(key, enabled)
+                courseSettingDao.insertOrUpdate(existing.copy(notificationsEnabled = enabled, updatedAt = System.currentTimeMillis()))
             } else {
                 courseSettingDao.insertOrUpdate(
                     CourseSettingEntity(
@@ -437,37 +297,57 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                         courseName = routine.courseName,
                         section = routine.section,
                         notificationsEnabled = enabled,
-                        isDropped = false
+                        updatedAt = System.currentTimeMillis()
                     )
                 )
             }
+            com.example.util.UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(getApplication())
             _uiState.update { it.copy(selectedClassReminderEnabled = enabled) }
         }
     }
 
-    fun openAddItemForCourse(courseKey: String?, type: String? = null) {
-        _uiState.update {
-            it.copy(
-                showAddEditSheet = true,
-                addEditItem = null,
-                addEditCourseKey = courseKey,
-                addEditInitialType = type
-            )
+    fun toggleTask(task: TaskEntity, completed: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = task.copy(status = if (completed) "DONE" else "TODO")
+            taskDao.insertTask(updated)
+            val routine = _uiState.value.selectedClass
+            if (routine != null) {
+                val allTasks = taskDao.getAllTasksDirect()
+                val tasks = allTasks.filter { it.courseName.equals(routine.courseName, ignoreCase = true) }
+                _uiState.update { it.copy(selectedClassTasks = tasks) }
+            }
         }
     }
 
-    fun openEditItem(item: CourseItemEntity) {
+    fun addTaskForCourse(title: String) {
+        val routine = _uiState.value.selectedClass ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val task = TaskEntity(
+                courseName = routine.courseName,
+                title = title,
+                dueDateMillis = System.currentTimeMillis() + 86400000L,
+                status = "TODO",
+                createdAt = System.currentTimeMillis()
+            )
+            taskDao.insertTask(task)
+            val allTasks = taskDao.getAllTasksDirect()
+            val tasks = allTasks.filter { it.courseName.equals(routine.courseName, ignoreCase = true) }
+            _uiState.update { it.copy(selectedClassTasks = tasks) }
+        }
+    }
+
+    fun openAddEditSheet(item: CourseItemEntity? = null, courseKey: String? = null, initialType: String? = null) {
         _uiState.update {
             it.copy(
                 showAddEditSheet = true,
                 addEditItem = item,
-                addEditCourseKey = item.courseKey,
-                addEditInitialType = item.type
+                addEditCourseKey = courseKey,
+                addEditInitialType = initialType
             )
         }
     }
 
-    fun dismissAddEditSheet() {
+    fun closeAddEditSheet() {
         _uiState.update {
             it.copy(
                 showAddEditSheet = false,
@@ -479,75 +359,91 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveCourseItem(item: CourseItemEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val id = if (item.id == 0L) {
-                courseItemDao.insertItem(item)
-            } else {
-                courseItemDao.updateItem(item)
-                item.id
-            }
-            CourseItemReminderScheduler.scheduleItemReminders(app, item.copy(id = id))
-            dismissAddEditSheet()
+        viewModelScope.launch {
+            val id = app.database.courseItemDao().insertItem(item)
+            val savedItem = item.copy(id = if (item.id == 0L) id else item.id)
+            CourseItemReminderScheduler.scheduleItemReminders(getApplication(), savedItem)
+            closeAddEditSheet()
         }
     }
 
-    fun deleteCourseItem(item: CourseItemEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
-            courseItemDao.deleteItem(item)
-            CourseItemReminderScheduler.cancelItemReminders(app, item.id)
-            dismissAddEditSheet()
-        }
-    }
+    fun triggerSync() {
+        val workRequest = PortalSyncWorker.createOneTimeWorkRequest()
+        workManager.enqueue(workRequest)
 
-    fun toggleItemDone(item: CourseItemEntity, isDone: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val newStatus = if (isDone) CourseItemStatus.DONE else CourseItemStatus.TODO
-            courseItemDao.updateStatus(item.id, newStatus)
-            if (isDone) {
-                CourseItemReminderScheduler.cancelItemReminders(app, item.id)
-            } else {
-                CourseItemReminderScheduler.scheduleItemReminders(app, item.copy(status = newStatus))
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSyncing = true, syncMessage = "Syncing with portal...") }
+            workManager.getWorkInfoByIdLiveData(workRequest.id).observeForever { info ->
+                if (info != null && info.state.isFinished) {
+                    val msg = info.outputData.getString(PortalSyncWorker.KEY_RESULT_MESSAGE) ?: "Sync finished"
+                    val success = info.outputData.getBoolean(PortalSyncWorker.KEY_IS_SUCCESS, true)
+                    _uiState.update {
+                        it.copy(
+                            isSyncing = false,
+                            syncMessage = if (success) msg else "Sync error: $msg"
+                        )
+                    }
+                }
             }
         }
     }
 
-    fun toggleTask(task: TaskEntity, completed: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            taskDao.updateTaskCompletion(task.id, completed)
-            val routine = _uiState.value.selectedClass ?: return@launch
-            val allTasks = taskDao.getAllTasksDirect()
-            val tasks = allTasks.filter {
-                it.courseName.equals(routine.courseName, ignoreCase = true)
-            }
-            _uiState.update { it.copy(selectedClassTasks = tasks) }
-        }
+    fun clearSyncMessage() {
+        _uiState.update { it.copy(syncMessage = null) }
     }
 
-    fun addTaskForCourse(title: String) {
-        val routine = _uiState.value.selectedClass ?: return
-        if (title.isBlank()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            taskDao.insertTask(
-                TaskEntity(
-                    title = title.trim(),
-                    courseName = routine.courseName,
-                    dueDateMillis = System.currentTimeMillis() + 86400000L * 3,
-                    priority = "MEDIUM",
-                    taskType = "ASSIGNMENT"
+    private fun generateWeekDays(routines: List<ClassRoutineEntity>): List<DayChipItem> {
+        val list = mutableListOf<DayChipItem>()
+        val cal = Calendar.getInstance()
+        val todayStr = DateTimeUtils.getCurrentDayOfWeek()
+        val dateFormat = SimpleDateFormat("d MMM", Locale.ENGLISH)
+        val dayNameFormat = SimpleDateFormat("EEEE", Locale.ENGLISH)
+
+        for (i in 0..6) {
+            val dayOfWeekStr = dayNameFormat.format(cal.time)
+            val dayAbbr = dayOfWeekStr.take(3).uppercase()
+            val dateNum = cal.get(Calendar.DAY_OF_MONTH).toString()
+            val fullDate = dateFormat.format(cal.time)
+            val isToday = dayOfWeekStr.equals(todayStr, ignoreCase = true)
+            val count = routines.count { it.dayOfWeek.equals(dayOfWeekStr, ignoreCase = true) }
+
+            list.add(
+                DayChipItem(
+                    dayOfWeek = dayOfWeekStr,
+                    dayAbbr = dayAbbr,
+                    dateNumber = dateNum,
+                    fullDateFormatted = fullDate,
+                    isToday = isToday,
+                    classCount = count
                 )
             )
-            val allTasks = taskDao.getAllTasksDirect()
-            val tasks = allTasks.filter {
-                it.courseName.equals(routine.courseName, ignoreCase = true)
-            }
-            _uiState.update { it.copy(selectedClassTasks = tasks) }
+            cal.add(Calendar.DAY_OF_YEAR, 1)
         }
+        return list
+    }
+
+    private fun getTomorrowDayOfWeek(currentDay: String): String {
+        val days = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+        val idx = days.indexOfFirst { it.equals(currentDay, ignoreCase = true) }
+        return if (idx != -1) days[(idx + 1) % days.size] else "Monday"
+    }
+
+    private fun getDayHeadline(dayOfWeek: String): String {
+        val todayStr = DateTimeUtils.getCurrentDayOfWeek()
+        if (dayOfWeek.equals(todayStr, ignoreCase = true)) {
+            return "Today, " + DateTimeUtils.formatDateHeadline()
+        }
+        val tomorrowStr = getTomorrowDayOfWeek(todayStr)
+        if (dayOfWeek.equals(tomorrowStr, ignoreCase = true)) {
+            return "Tomorrow"
+        }
+        return dayOfWeek
     }
 
     private fun isNetworkAvailable(): Boolean {
-        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val network = connectivityManager?.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 }

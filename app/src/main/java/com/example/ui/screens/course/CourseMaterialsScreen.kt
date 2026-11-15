@@ -66,7 +66,6 @@ fun CourseMaterialsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
         ) {
             // Sub-screen Header
             Row(
