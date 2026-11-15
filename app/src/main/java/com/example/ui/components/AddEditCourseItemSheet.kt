@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -47,7 +48,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,9 +62,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.CourseItemEntity
-import com.example.data.local.entity.CourseItemStatus
 import com.example.data.local.entity.CourseItemType
 import com.example.ui.theme.UniTrackTheme
+import com.example.util.CourseMeetingSlot
 import com.example.util.DateTimeUtils
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -76,7 +76,14 @@ data class CoursePickerOption(
     val courseName: String,
     val section: String,
     val routineDays: List<String> = emptyList(),
+    val meetingSlots: List<CourseMeetingSlot> = emptyList(),
     val room: String = ""
+)
+
+private data class SlotChipData(
+    val label: String,
+    val timeMillis: Long,
+    val room: String
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,18 +117,23 @@ fun AddEditCourseItemSheet(
     var title by remember { mutableStateOf(existingItem?.title ?: "") }
     var hasCustomTitle by remember { mutableStateOf(existingItem != null && existingItem.title.isNotBlank()) }
 
-    var dueAtMillis by remember {
-        mutableStateOf(
-            existingItem?.dueAt ?: (System.currentTimeMillis() + 86400000L)
-        )
-    }
-    var hasTime by remember { mutableStateOf(existingItem?.hasTime ?: false) }
+    var isManuallyEdited by remember { mutableStateOf(isEditMode) }
+    var isVenueManuallyEdited by remember { mutableStateOf(isEditMode && existingItem?.venue?.isNotBlank() == true) }
+
+    // Initial date, time & room calculation
+    val initialSlotInfo = defaultCourse?.let { DateTimeUtils.calculateNextMeetingSlotInfo(it.meetingSlots) }
+    val initialDueAt = existingItem?.dueAt ?: (initialSlotInfo?.millis ?: (System.currentTimeMillis() + 86400000L))
+    val initialHasTime = existingItem?.hasTime ?: (initialSlotInfo?.hasTime ?: false)
+    val initialVenue = existingItem?.venue ?: (initialSlotInfo?.room?.ifBlank { defaultCourse?.room ?: "" } ?: "")
+
+    var dueAtMillis by remember { mutableStateOf(initialDueAt) }
+    var hasTime by remember { mutableStateOf(initialHasTime) }
+    var venue by remember { mutableStateOf(initialVenue) }
 
     var topics by remember { mutableStateOf(existingItem?.topics ?: "") }
     var marksStr by remember {
         mutableStateOf(existingItem?.marks?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "")
     }
-    var venue by remember { mutableStateOf(existingItem?.venue ?: defaultCourse?.room ?: "") }
     var notes by remember { mutableStateOf(existingItem?.notes ?: "") }
 
     var selectedOffsets by remember {
@@ -158,6 +170,8 @@ fun AddEditCourseItemSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(0.92f)
                 .windowInsetsPadding(WindowInsets.statusBars)
+                .navigationBarsPadding()
+                .imePadding()
         ) {
             // 1. Top Header Row (Title 22sp semibold on left, close icon on right)
             Row(
@@ -182,29 +196,27 @@ fun AddEditCourseItemSheet(
                     Icon(
                         imageVector = Icons.Outlined.Close,
                         contentDescription = "Close",
-                        tint = colors.textSecondary,
-                        modifier = Modifier.size(22.dp)
+                        tint = colors.textSecondary
                     )
                 }
             }
 
-            // 2. Scrollable Form Content (with imePadding to stay above keyboard)
+            // 2. Scrollable Body Content
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = dimens.ScreenPadding)
-                    .imePadding(),
+                    .padding(horizontal = dimens.ScreenPadding),
                 verticalArrangement = Arrangement.spacedBy(dimens.Space20)
             ) {
-                // Section: TYPE
+                // Section: ITEM TYPE SELECTOR
                 Column(verticalArrangement = Arrangement.spacedBy(dimens.Space8)) {
                     Text(
                         text = "TYPE",
                         style = typography.sectionHeaderLabel,
                         color = colors.sand
                     )
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -213,37 +225,35 @@ fun AddEditCourseItemSheet(
                     ) {
                         CourseItemType.ALL.forEach { type ->
                             val isSelected = selectedType.equals(type, ignoreCase = true)
-                            val chipBg = if (isSelected) colors.accentCyan.copy(alpha = 0.15f) else colors.surfaceField
-                            val chipBorder = if (isSelected) colors.accentCyan else colors.cardBorder
-                            val chipText = if (isSelected) colors.accentCyan else colors.textSecondary
+                            val containerBg = if (isSelected) colors.accentCyan.copy(alpha = 0.15f) else colors.surfaceField
+                            val contentFg = if (isSelected) colors.accentCyan else colors.textSecondary
+                            val borderColor = if (isSelected) colors.accentCyan else colors.cardBorder
 
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(dimens.PillRadius))
-                                    .background(chipBg)
-                                    .border(dimens.HairlineBorder, chipBorder, RoundedCornerShape(dimens.PillRadius))
+                                    .background(containerBg)
+                                    .border(dimens.HairlineBorder, borderColor, RoundedCornerShape(dimens.PillRadius))
                                     .clickable {
                                         selectedType = type
-                                        if (!hasCustomTitle) {
-                                            title = CourseItemType.displayName(type)
-                                        }
                                     }
                                     .padding(horizontal = dimens.Space16, vertical = dimens.Space8)
-                                    .testTag("chip_type_$type"),
+                                    .testTag("type_chip_$type"),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = CourseItemType.displayName(type),
                                     style = typography.labelBadge,
-                                    color = chipText,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                                    color = contentFg,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 12.sp
                                 )
                             }
                         }
                     }
                 }
 
-                // Section: COURSE
+                // Section: COURSE SELECTOR
                 Column(verticalArrangement = Arrangement.spacedBy(dimens.Space8)) {
                     Text(
                         text = "COURSE",
@@ -297,8 +307,15 @@ fun AddEditCourseItemSheet(
                                     },
                                     onClick = {
                                         selectedCourse = course
-                                        if (venue.isBlank() && course.room.isNotBlank()) {
-                                            venue = course.room
+                                        if (!isEditMode) {
+                                            val nextSlot = DateTimeUtils.calculateNextMeetingSlotInfo(course.meetingSlots)
+                                            if (!isManuallyEdited) {
+                                                dueAtMillis = nextSlot.millis
+                                                hasTime = nextSlot.hasTime
+                                            }
+                                            if (!isVenueManuallyEdited) {
+                                                venue = nextSlot.room.ifBlank { course.room }
+                                            }
                                         }
                                         courseError = null
                                         courseDropdownExpanded = false
@@ -373,6 +390,7 @@ fun AddEditCourseItemSheet(
                                             cal.set(Calendar.MONTH, m)
                                             cal.set(Calendar.DAY_OF_MONTH, d)
                                             dueAtMillis = cal.timeInMillis
+                                            isManuallyEdited = true
                                         },
                                         cal.get(Calendar.YEAR),
                                         cal.get(Calendar.MONTH),
@@ -400,10 +418,10 @@ fun AddEditCourseItemSheet(
                             }
                         }
 
-                        // Time selector
+                        // Time selector (12-hour format display with AM/PM)
                         val timeCal = Calendar.getInstance().apply { timeInMillis = dueAtMillis }
                         val timeStr24 = SimpleDateFormat("HH:mm", Locale.ENGLISH).format(timeCal.time)
-                        val timeDisplay = if (hasTime) DateTimeUtils.formatTime12h(timeStr24) else "Set time"
+                        val timeDisplay = if (hasTime) DateTimeUtils.formatTime12h(timeStr24) else "All day"
 
                         Box(
                             modifier = Modifier
@@ -425,6 +443,7 @@ fun AddEditCourseItemSheet(
                                             cal.set(Calendar.SECOND, 0)
                                             dueAtMillis = cal.timeInMillis
                                             hasTime = true
+                                            isManuallyEdited = true
                                         },
                                         cal.get(Calendar.HOUR_OF_DAY),
                                         cal.get(Calendar.MINUTE),
@@ -453,21 +472,28 @@ fun AddEditCourseItemSheet(
                         }
                     }
 
-                    // Quick Date Chips: "Next class", "Tomorrow", "In 1 week", "Clear time"
+                    // Quick Chips: course's actual meeting slots for coming week, Tomorrow, In 1 week, All day toggle
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(dimens.Space8)
                     ) {
-                        // Quick chip: Next class
                         selectedCourse?.let { course ->
-                            QuickDateChip(
-                                label = "Next class",
-                                onClick = {
-                                    dueAtMillis = DateTimeUtils.calculateNextClassDate(course.routineDays)
-                                }
-                            )
+                            val slotChips = generateCourseSlotChips(course)
+                            slotChips.forEach { chip ->
+                                QuickDateChip(
+                                    label = chip.label,
+                                    onClick = {
+                                        dueAtMillis = chip.timeMillis
+                                        hasTime = true
+                                        isManuallyEdited = true
+                                        if (chip.room.isNotBlank() && !isVenueManuallyEdited) {
+                                            venue = chip.room
+                                        }
+                                    }
+                                )
+                            }
                         }
 
                         // Quick chip: Tomorrow
@@ -475,11 +501,11 @@ fun AddEditCourseItemSheet(
                             label = "Tomorrow",
                             onClick = {
                                 val cal = Calendar.getInstance().apply {
+                                    timeInMillis = dueAtMillis
                                     add(Calendar.DAY_OF_YEAR, 1)
-                                    set(Calendar.HOUR_OF_DAY, 10)
-                                    set(Calendar.MINUTE, 0)
                                 }
                                 dueAtMillis = cal.timeInMillis
+                                isManuallyEdited = true
                             }
                         )
 
@@ -488,20 +514,22 @@ fun AddEditCourseItemSheet(
                             label = "In 1 week",
                             onClick = {
                                 val cal = Calendar.getInstance().apply {
+                                    timeInMillis = dueAtMillis
                                     add(Calendar.DAY_OF_YEAR, 7)
-                                    set(Calendar.HOUR_OF_DAY, 10)
-                                    set(Calendar.MINUTE, 0)
                                 }
                                 dueAtMillis = cal.timeInMillis
+                                isManuallyEdited = true
                             }
                         )
 
-                        if (hasTime) {
-                            QuickDateChip(
-                                label = "Clear time",
-                                onClick = { hasTime = false }
-                            )
-                        }
+                        // Quick chip: All day / Set time toggle
+                        QuickDateChip(
+                            label = if (hasTime) "All day" else "Set time",
+                            onClick = {
+                                hasTime = !hasTime
+                                isManuallyEdited = true
+                            }
+                        )
                     }
                 }
 
@@ -515,105 +543,119 @@ fun AddEditCourseItemSheet(
                     CustomFormField(
                         value = topics,
                         onValueChange = { topics = it },
-                        placeholder = "Chapters, slide numbers, topics covered...",
+                        placeholder = "e.g. Chapter 4, Slide 12-25, Linked Lists",
                         singleLine = false,
                         testTag = "input_item_topics"
                     )
                 }
 
-                // Section: TOTAL MARKS
-                Column(verticalArrangement = Arrangement.spacedBy(dimens.Space8)) {
-                    Text(
-                        text = "TOTAL MARKS (OPTIONAL)",
-                        style = typography.sectionHeaderLabel,
-                        color = colors.sand
-                    )
-                    CustomFormField(
-                        value = marksStr,
-                        onValueChange = { marksStr = it },
-                        placeholder = "e.g. 20",
-                        keyboardType = KeyboardType.Number,
-                        testTag = "input_item_marks"
-                    )
-                }
+                // Section: MARKS / WEIGHTAGE & VENUE (Side by side)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(dimens.Space12)
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(dimens.Space8)
+                    ) {
+                        Text(
+                            text = "MARKS",
+                            style = typography.sectionHeaderLabel,
+                            color = colors.sand
+                        )
+                        CustomFormField(
+                            value = marksStr,
+                            onValueChange = { marksStr = it },
+                            placeholder = "e.g. 10",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            testTag = "input_item_marks"
+                        )
+                    }
 
-                // Section: VENUE / ROOM
-                Column(verticalArrangement = Arrangement.spacedBy(dimens.Space8)) {
-                    Text(
-                        text = "VENUE / ROOM (OPTIONAL)",
-                        style = typography.sectionHeaderLabel,
-                        color = colors.sand
-                    )
-                    CustomFormField(
-                        value = venue,
-                        onValueChange = { venue = it },
-                        placeholder = "e.g. Room 3102 / DS0302",
-                        testTag = "input_item_venue"
-                    )
+                    Column(
+                        modifier = Modifier.weight(1.2f),
+                        verticalArrangement = Arrangement.spacedBy(dimens.Space8)
+                    ) {
+                        Text(
+                            text = "ROOM / VENUE",
+                            style = typography.sectionHeaderLabel,
+                            color = colors.sand
+                        )
+                        CustomFormField(
+                            value = venue,
+                            onValueChange = {
+                                venue = it
+                                isVenueManuallyEdited = true
+                            },
+                            placeholder = "e.g. DN0212 / Annex",
+                            testTag = "input_item_venue"
+                        )
+                    }
                 }
 
                 // Section: NOTES
                 Column(verticalArrangement = Arrangement.spacedBy(dimens.Space8)) {
                     Text(
-                        text = "NOTES (OPTIONAL)",
+                        text = "NOTES",
                         style = typography.sectionHeaderLabel,
                         color = colors.sand
                     )
                     CustomFormField(
                         value = notes,
                         onValueChange = { notes = it },
-                        placeholder = "Additional instructions, submission links...",
+                        placeholder = "Any extra details, group members, links...",
                         singleLine = false,
                         testTag = "input_item_notes"
                     )
                 }
 
-                // Section: REMINDERS
+                // Section: REMINDER OFFSETS
                 Column(verticalArrangement = Arrangement.spacedBy(dimens.Space8)) {
                     Text(
-                        text = "REMINDERS",
+                        text = "REMIND ME",
                         style = typography.sectionHeaderLabel,
                         color = colors.sand
                     )
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(dimens.Space8)
                     ) {
-                        val reminderPresets = listOf(
+                        listOf(
                             1440 to "1 day before",
                             180 to "3 hours before",
-                            60 to "1 hour before",
-                            15 to "15 min before"
-                        )
-
-                        reminderPresets.forEach { (mins, label) ->
-                            val isChecked = selectedOffsets.contains(mins)
-                            val chipBg = if (isChecked) colors.accentCyan.copy(alpha = 0.15f) else colors.surfaceField
-                            val chipBorder = if (isChecked) colors.accentCyan else colors.cardBorder
-                            val chipText = if (isChecked) colors.accentCyan else colors.textSecondary
+                            120 to "2 hours before",
+                            60 to "1 hour before"
+                        ).forEach { (offset, labelText) ->
+                            val isSelected = selectedOffsets.contains(offset)
+                            val containerBg = if (isSelected) colors.accentCyan.copy(alpha = 0.15f) else colors.surfaceField
+                            val contentFg = if (isSelected) colors.accentCyan else colors.textSecondary
+                            val borderColor = if (isSelected) colors.accentCyan else colors.cardBorder
 
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(dimens.PillRadius))
-                                    .background(chipBg)
-                                    .border(dimens.HairlineBorder, chipBorder, RoundedCornerShape(dimens.PillRadius))
+                                    .background(containerBg)
+                                    .border(dimens.HairlineBorder, borderColor, RoundedCornerShape(dimens.PillRadius))
                                     .clickable {
-                                        selectedOffsets = if (isChecked) {
-                                            selectedOffsets - mins
+                                        selectedOffsets = if (isSelected) {
+                                            selectedOffsets - offset
                                         } else {
-                                            selectedOffsets + mins
+                                            selectedOffsets + offset
                                         }
                                     }
-                                    .padding(horizontal = dimens.Space12, vertical = dimens.Space8),
+                                    .padding(horizontal = dimens.Space12, vertical = dimens.Space8)
+                                    .testTag("reminder_chip_$offset"),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = label,
-                                    style = typography.labelBadge,
-                                    color = chipText,
-                                    fontWeight = if (isChecked) FontWeight.SemiBold else FontWeight.Medium
+                                    text = labelText,
+                                    style = typography.meta,
+                                    color = contentFg,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 12.sp
                                 )
                             }
                         }
@@ -654,70 +696,68 @@ fun AddEditCourseItemSheet(
                             )
                         }
                     } else {
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(1.dp))
                     }
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(dimens.Space8),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AppButton(
-                            text = "Cancel",
-                            onClick = onDismiss,
-                            variant = AppButtonVariant.GHOST,
-                            testTag = "cancel_sheet_button"
-                        )
+                    AppButton(
+                        text = if (isEditMode) "Save Changes" else "Create Item",
+                        onClick = {
+                            if (title.isBlank()) {
+                                titleError = "Title is required"
+                                return@AppButton
+                            }
+                            val course = selectedCourse
+                            if (course == null) {
+                                courseError = "Please select a course"
+                                return@AppButton
+                            }
 
-                        AppButton(
-                            text = if (isEditMode) "Save Changes" else "Create Item",
-                            onClick = {
-                                if (title.isBlank()) {
-                                    titleError = "Title is required"
-                                    return@AppButton
-                                }
-                                val course = selectedCourse
-                                if (course == null) {
-                                    courseError = "Please select a course"
-                                    return@AppButton
-                                }
+                            val offsetsList = if (selectedOffsets.isEmpty()) listOf(1440, 120) else selectedOffsets.toList().sortedDescending()
+                            val marksVal = marksStr.toDoubleOrNull()
 
-                                val offsetsList = if (selectedOffsets.isEmpty()) listOf(1440, 120) else selectedOffsets.toList().sortedDescending()
-                                val marksVal = marksStr.toDoubleOrNull()
+                            // Calculate final dueAt: if "All day", compute relative to 8:00 AM of that day
+                            val finalDueAt = if (!hasTime) {
+                                Calendar.getInstance().apply {
+                                    timeInMillis = dueAtMillis
+                                    set(Calendar.HOUR_OF_DAY, 8)
+                                    set(Calendar.MINUTE, 0)
+                                    set(Calendar.SECOND, 0)
+                                    set(Calendar.MILLISECOND, 0)
+                                }.timeInMillis
+                            } else dueAtMillis
 
-                                val itemToSave = (existingItem ?: CourseItemEntity(
-                                    courseKey = course.courseKey,
-                                    courseName = course.courseName,
-                                    section = course.section,
-                                    type = selectedType,
-                                    title = title.trim(),
-                                    dueAt = dueAtMillis,
-                                    hasTime = hasTime,
-                                    topics = topics.trim(),
-                                    marks = marksVal,
-                                    venue = venue.trim(),
-                                    notes = notes.trim(),
-                                    reminderOffsets = offsetsList.joinToString(",")
-                                )).copy(
-                                    courseKey = course.courseKey,
-                                    courseName = course.courseName,
-                                    section = course.section,
-                                    type = selectedType,
-                                    title = title.trim(),
-                                    dueAt = dueAtMillis,
-                                    hasTime = hasTime,
-                                    topics = topics.trim(),
-                                    marks = marksVal,
-                                    venue = venue.trim(),
-                                    notes = notes.trim(),
-                                    reminderOffsets = offsetsList.joinToString(",")
-                                )
+                            val itemToSave = (existingItem ?: CourseItemEntity(
+                                courseKey = course.courseKey,
+                                courseName = course.courseName,
+                                section = course.section,
+                                type = selectedType,
+                                title = title.trim(),
+                                dueAt = finalDueAt,
+                                hasTime = hasTime,
+                                topics = topics.trim(),
+                                marks = marksVal,
+                                venue = venue.trim(),
+                                notes = notes.trim(),
+                                reminderOffsets = offsetsList.joinToString(",")
+                            )).copy(
+                                courseKey = course.courseKey,
+                                courseName = course.courseName,
+                                section = course.section,
+                                type = selectedType,
+                                title = title.trim(),
+                                dueAt = finalDueAt,
+                                hasTime = hasTime,
+                                topics = topics.trim(),
+                                marks = marksVal,
+                                venue = venue.trim(),
+                                notes = notes.trim(),
+                                reminderOffsets = offsetsList.joinToString(",")
+                            )
 
-                                onSave(itemToSave)
-                            },
-                            variant = AppButtonVariant.PRIMARY,
-                            testTag = "save_item_button"
-                        )
-                    }
+                            onSave(itemToSave)
+                        },
+                        modifier = Modifier.testTag("save_item_button")
+                    )
                 }
             }
         }
@@ -727,42 +767,78 @@ fun AddEditCourseItemSheet(
     if (showDeleteConfirmDialog && existingItem != null && onDelete != null) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
-            containerColor = colors.surfaceSheet,
-            title = {
-                Text(
-                    text = "Delete ${CourseItemType.displayName(existingItem.type)}?",
-                    style = typography.sectionTitle,
-                    color = colors.textPrimary
-                )
-            },
-            text = {
-                Text(
-                    text = "Are you sure you want to delete \"${existingItem.title}\"? This cannot be undone.",
-                    style = typography.body,
-                    color = colors.textSecondary
-                )
-            },
+            title = { Text("Delete Item?", style = typography.sectionTitle) },
+            text = { Text("Are you sure you want to delete '${existingItem.title}'?", style = typography.body) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showDeleteConfirmDialog = false
                         onDelete(existingItem)
+                        showDeleteConfirmDialog = false
                     }
                 ) {
-                    Text(
-                        text = "Delete",
-                        color = colors.danger,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("Delete", color = colors.danger)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                    Text(text = "Cancel", color = colors.textSecondary)
+                    Text("Cancel", color = colors.textSecondary)
                 }
             }
         )
     }
+}
+
+private fun generateCourseSlotChips(course: CoursePickerOption, nowMillis: Long = System.currentTimeMillis()): List<SlotChipData> {
+    if (course.meetingSlots.isEmpty()) return emptyList()
+
+    val dayMap = mapOf(
+        "SUNDAY" to Calendar.SUNDAY,
+        "MONDAY" to Calendar.MONDAY,
+        "TUESDAY" to Calendar.TUESDAY,
+        "WEDNESDAY" to Calendar.WEDNESDAY,
+        "THURSDAY" to Calendar.THURSDAY,
+        "FRIDAY" to Calendar.FRIDAY,
+        "SATURDAY" to Calendar.SATURDAY
+    )
+
+    val chipList = mutableListOf<SlotChipData>()
+
+    for (slot in course.meetingSlots) {
+        val targetDayOfWeek = dayMap[slot.dayOfWeek.trim().uppercase()] ?: continue
+        val startMins = try {
+            val parts = slot.startTime.trim().split(":")
+            val h = parts[0].toInt()
+            val m = if (parts.size > 1) parts[1].toInt() else 0
+            h * 60 + m
+        } catch (e: Exception) { 480 }
+
+        val startHour = startMins / 60
+        val startMin = startMins % 60
+
+        for (dayOffset in 0..6) {
+            val candidateCal = Calendar.getInstance().apply {
+                timeInMillis = nowMillis
+                add(Calendar.DAY_OF_YEAR, dayOffset)
+            }
+
+            if (candidateCal.get(Calendar.DAY_OF_WEEK) == targetDayOfWeek) {
+                candidateCal.set(Calendar.HOUR_OF_DAY, startHour)
+                candidateCal.set(Calendar.MINUTE, startMin)
+                candidateCal.set(Calendar.SECOND, 0)
+                candidateCal.set(Calendar.MILLISECOND, 0)
+
+                if (candidateCal.timeInMillis > nowMillis) {
+                    val dateFormatted = SimpleDateFormat("EEE, d MMM", Locale.ENGLISH).format(Date(candidateCal.timeInMillis))
+                    val time12h = DateTimeUtils.formatTime12h(slot.startTime)
+                    val roomText = if (slot.room.isNotBlank()) " [${slot.room}]" else ""
+                    val label = "$dateFormatted · $time12h$roomText"
+                    chipList.add(SlotChipData(label, candidateCal.timeInMillis, slot.room))
+                }
+            }
+        }
+    }
+
+    return chipList.sortedBy { it.timeMillis }
 }
 
 @Composable
@@ -786,7 +862,7 @@ private fun QuickDateChip(
         Text(
             text = label,
             style = typography.meta,
-            color = colors.textSecondary,
+            color = colors.accentCyan,
             fontSize = 11.sp
         )
     }
@@ -798,46 +874,42 @@ private fun CustomFormField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
-    singleLine: Boolean = true,
-    keyboardType: KeyboardType = KeyboardType.Text,
     isError: Boolean = false,
+    singleLine: Boolean = true,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     testTag: String = ""
 ) {
     val colors = UniTrackTheme.colors
     val typography = UniTrackTheme.typography
     val dimens = UniTrackTheme.dimens
 
-    val borderColor = if (isError) colors.danger else colors.cardBorder
-
     Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(dimens.BoxRadius))
             .background(colors.surfaceField)
-            .border(dimens.HairlineBorder, borderColor, RoundedCornerShape(dimens.BoxRadius))
-            .padding(horizontal = dimens.Space16, vertical = if (singleLine) dimens.Space12 else dimens.Space16)
+            .border(
+                width = dimens.HairlineBorder,
+                color = if (isError) colors.danger else colors.cardBorder,
+                shape = RoundedCornerShape(dimens.BoxRadius)
+            )
+            .padding(horizontal = dimens.Space16, vertical = dimens.Space12)
             .testTag(testTag)
     ) {
         if (value.isEmpty()) {
             Text(
                 text = placeholder,
                 style = typography.body,
-                color = colors.textSecondary,
-                fontSize = 14.sp
+                color = colors.textSecondary.copy(alpha = 0.6f)
             )
         }
-
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            textStyle = typography.body.copy(
-                color = colors.textPrimary,
-                fontSize = 14.sp
-            ),
+            textStyle = typography.body.copy(color = colors.textPrimary),
             singleLine = singleLine,
-            maxLines = if (singleLine) 1 else 4,
+            keyboardOptions = keyboardOptions,
             cursorBrush = SolidColor(colors.accentCyan),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             modifier = Modifier.fillMaxWidth()
         )
     }

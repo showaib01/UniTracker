@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -153,7 +154,11 @@ fun MainAppScreen(
     )
 
     val isBottomBarVisible = currentRoute in bottomNavItems.map { it.route }
-    val showAppTopBar = currentRoute in bottomNavItems.map { it.route }
+    val showAppTopBar = currentRoute in listOf(
+        Screen.Today.route,
+        Screen.Routine.route,
+        Screen.Tasks.route
+    )
 
     val topBarTitle = when (currentRoute) {
         Screen.Today.route -> "UniTrack"
@@ -171,6 +176,39 @@ fun MainAppScreen(
         else -> "AIUB Student"
     }
 
+    // Unified Top-Level Navigation Helper
+    val navigateToTopLevelTab: (String) -> Unit = { route ->
+        if (currentRoute == route) {
+            navController.popBackStack(route, inclusive = false)
+        } else {
+            navController.navigate(route) {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
+    val onBackCallback: () -> Unit = {
+        if (!navController.popBackStack()) {
+            navigateToTopLevelTab(Screen.Today.route)
+        }
+    }
+
+    // Unified Single BackHandler Policy
+    val isTopLevel = currentRoute in bottomNavItems.map { it.route }
+    val isHome = currentRoute == Screen.Today.route
+
+    BackHandler(enabled = !isHome) {
+        if (isTopLevel) {
+            navigateToTopLevelTab(Screen.Today.route)
+        } else {
+            onBackCallback()
+        }
+    }
+
     AppBackground {
         Scaffold(
             containerColor = Color.Transparent,
@@ -182,9 +220,7 @@ fun MainAppScreen(
                         subtitle = topBarSubtitle,
                         badgeCount = overdueCount,
                         onNotificationsClick = {
-                            if (currentRoute != Screen.Tasks.route) {
-                                navController.navigate(Screen.Tasks.route)
-                            }
+                            navigateToTopLevelTab(Screen.Tasks.route)
                         },
                         isDark = isDark,
                         onThemeToggle = onToggleTheme
@@ -200,15 +236,7 @@ fun MainAppScreen(
                     GlassBottomBar(
                         currentRoute = currentRoute,
                         onNavigate = { route ->
-                            if (currentRoute != route) {
-                                navController.navigate(route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
+                            navigateToTopLevelTab(route)
                         }
                     )
                 }
@@ -222,15 +250,16 @@ fun MainAppScreen(
                 composable(Screen.Today.route) {
                     TodayScreen(
                         onNavigateToPortal = { navController.navigate(Screen.Portal.route) },
-                        onNavigateToTasks = { navController.navigate(Screen.Tasks.route) },
-                        onNavigateToRoutine = { navController.navigate(Screen.Routine.route) },
+                        onNavigateToTasks = { navigateToTopLevelTab(Screen.Tasks.route) },
+                        onNavigateToRoutine = { navigateToTopLevelTab(Screen.Routine.route) },
                         onOpenCourse = { courseKey -> navController.navigate(Screen.Course.createRoute(courseKey)) }
                     )
                 }
 
                 composable(Screen.Routine.route) {
                     RoutineScreen(
-                        onOpenCourse = { courseKey -> navController.navigate(Screen.Course.createRoute(courseKey)) }
+                        onOpenCourse = { courseKey -> navController.navigate(Screen.Course.createRoute(courseKey)) },
+                        onNavigateToPortal = { navController.navigate(Screen.Portal.route) }
                     )
                 }
 
@@ -251,17 +280,16 @@ fun MainAppScreen(
                     }
                     CourseScreen(
                         viewModel = courseVm,
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = onBackCallback
                     )
                 }
 
                 composable(Screen.More.route) {
-                    MoreScreen(
+                    SettingsScreen(
                         onNavigateToPortal = { navController.navigate(Screen.Portal.route) },
+                        onNavigateToNotices = { navController.navigate(Screen.Notices.route) },
                         onNavigateToCapture = { navController.navigate(Screen.PageCapture.route) },
                         onNavigateToDebug = { navController.navigate(Screen.ParserDebug.route) },
-                        onNavigateToNotices = { navController.navigate(Screen.Notices.route) },
-                        onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                         onNavigateToDebugLogs = { navController.navigate(Screen.DebugLog.route) },
                         onNavigateToDesignSystem = { navController.navigate(Screen.DesignSystem.route) }
                     )
@@ -270,7 +298,7 @@ fun MainAppScreen(
                 // Sub-screens
                 composable(Screen.Portal.route) {
                     PortalScreen(
-                        onNavigateBack = { navController.popBackStack() },
+                        onNavigateBack = onBackCallback,
                         onNavigateToDebug = { navController.navigate(Screen.ParserDebug.route) },
                         onNavigateToCaptures = { navController.navigate(Screen.PageCapture.route) }
                     )
@@ -279,7 +307,7 @@ fun MainAppScreen(
                 composable(Screen.PageCapture.route) {
                     val debugVm: ParserDebugViewModel = viewModel()
                     PageCaptureScreen(
-                        onNavigateBack = { navController.popBackStack() },
+                        onNavigateBack = onBackCallback,
                         onNavigateToDebugWithPage = { page ->
                             debugVm.loadPage(page)
                             navController.navigate(Screen.ParserDebug.route)
@@ -289,13 +317,17 @@ fun MainAppScreen(
 
                 composable(Screen.ParserDebug.route) {
                     ParserDebugScreen(
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = onBackCallback
                     )
                 }
 
                 composable(Screen.Settings.route) {
                     SettingsScreen(
-                        onNavigateBack = { navController.popBackStack() },
+                        onNavigateBack = onBackCallback,
+                        onNavigateToPortal = { navController.navigate(Screen.Portal.route) },
+                        onNavigateToNotices = { navController.navigate(Screen.Notices.route) },
+                        onNavigateToCapture = { navController.navigate(Screen.PageCapture.route) },
+                        onNavigateToDebug = { navController.navigate(Screen.ParserDebug.route) },
                         onNavigateToDebugLogs = { navController.navigate(Screen.DebugLog.route) },
                         onNavigateToDesignSystem = { navController.navigate(Screen.DesignSystem.route) }
                     )
@@ -303,19 +335,19 @@ fun MainAppScreen(
 
                 composable(Screen.Notices.route) {
                     NoticesScreen(
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = onBackCallback
                     )
                 }
 
                 composable(Screen.DebugLog.route) {
                     DebugLogScreen(
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = onBackCallback
                     )
                 }
 
                 composable(Screen.DesignSystem.route) {
                     DesignSystemScreen(
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = onBackCallback
                     )
                 }
             }

@@ -10,6 +10,7 @@ import com.example.data.local.entity.CourseItemType
 import com.example.data.local.entity.CourseSettingEntity
 import com.example.ui.components.CoursePickerOption
 import com.example.util.CourseItemReminderScheduler
+import com.example.util.CourseMeetingSlot
 import com.example.util.DateTimeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,6 +66,7 @@ class TasksViewModel(application: Application) : AndroidViewModel(application) {
                         courseName = firstR.courseName,
                         section = firstR.section,
                         routineDays = rList.map { it.dayOfWeek },
+                        meetingSlots = rList.map { CourseMeetingSlot(it.dayOfWeek, it.startTime, it.endTime) },
                         room = firstR.room
                     )
                 }

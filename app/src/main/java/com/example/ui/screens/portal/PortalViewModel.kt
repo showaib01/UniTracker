@@ -266,6 +266,7 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
                     routineDao.replaceAllRoutines(result.data)
                     preferencesRepository.updateLastSyncTimestamp()
                     preferencesRepository.updateSessionActive(true)
+                    com.example.util.UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(app)
                     summaryText = "Captured ${html.length} chars: Saved ${result.data.size} classes to Routine & remembered URL!"
                 } else {
                     summaryText = "Captured ${html.length} chars: 0 classes parsed (${result.warnings.firstOrNull() ?: "check table"})"

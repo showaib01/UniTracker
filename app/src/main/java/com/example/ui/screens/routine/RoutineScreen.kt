@@ -44,6 +44,9 @@ import com.example.data.local.entity.AttendanceEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseSettingEntity
 import com.example.data.local.entity.TaskEntity
+import com.example.ui.components.EmptyState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.EventBusy
 import com.example.ui.screens.today.ClassDetailSheet
 import com.example.ui.theme.UniTrackTheme
 import com.example.util.DateTimeUtils
@@ -54,6 +57,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun RoutineScreen(
     onOpenCourse: ((String) -> Unit)? = null,
+    onNavigateToPortal: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -138,7 +142,22 @@ fun RoutineScreen(
             }
 
             // Routine list for the selected day
-            if (filteredRoutines.isEmpty()) {
+            if (allRoutines.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EmptyState(
+                        title = "No classes in routine",
+                        message = "Log in to the AIUB Student Portal to load your routine.",
+                        icon = Icons.Outlined.EventBusy,
+                        actionButtonText = "Open AIUB Student Portal",
+                        onActionClick = onNavigateToPortal
+                    )
+                }
+            } else if (filteredRoutines.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Notifications
@@ -25,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.UniTrackTheme
@@ -33,11 +36,14 @@ import kotlinx.coroutines.delay
 
 /**
  * AppTopBar from design reference:
- * - Left: two-line title (small secondary subtitle, large screen title)
+ * - Outer container background extends behind status bar.
+ * - Content starts below status bar via windowInsetsPadding(WindowInsets.statusBars).
+ * - Left: two-line title (small secondary subtitle, large screen title) without overlap.
  * - Right:
- *     - Bell icon with overdue/due-today badge
  *     - Glass live clock pill ("Wednesday | 12:19 PM" ticking)
+ *     - Bell icon with overdue/due-today badge
  *     - Moon/sun theme toggle
+ *     - Vertically centered with 8dp spacing.
  */
 @Composable
 fun AppTopBar(
@@ -62,78 +68,91 @@ fun AppTopBar(
         }
     }
 
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = dimens.ScreenPadding, vertical = dimens.Space12),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .background(colors.background)
+            .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        // Left: Two-line Title
-        Column(
-            modifier = Modifier
-                .weight(1f, fill = false)
-                .testTag("app_top_bar_title_column")
-        ) {
-            Text(
-                text = subtitle,
-                style = typography.meta,
-                color = colors.textSecondary,
-                fontSize = 12.sp
-            )
-            Text(
-                text = title,
-                style = typography.screenTitle,
-                color = colors.textPrimary
-            )
-        }
-
-        Spacer(modifier = Modifier.width(dimens.Space8))
-
-        // Right Action Items
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(dimens.Space8),
-            modifier = Modifier.testTag("app_top_bar_actions")
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = dimens.ScreenPadding, vertical = dimens.Space12),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Live clock pill
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            // Left: Two-line Title (Subtitle above Title, single line, no overlap)
+            Column(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(dimens.PillRadius))
-                    .background(
-                        if (colors.isDark) Color.White.copy(alpha = 0.07f) else Color.Black.copy(alpha = 0.05f)
-                    )
-                    .border(
-                        width = dimens.HairlineBorder,
-                        color = colors.cardBorder,
-                        shape = RoundedCornerShape(dimens.PillRadius)
-                    )
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                    .testTag("live_clock_pill")
+                    .weight(1f, fill = false)
+                    .testTag("app_top_bar_title_column")
             ) {
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = typography.meta,
+                        color = colors.textSecondary,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
-                    text = liveClockText,
-                    style = typography.timeText,
+                    text = title,
+                    style = typography.screenTitle,
                     color = colors.textPrimary,
-                    fontSize = 11.sp
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            // Bell icon with badge
-            BadgedIcon(
-                icon = Icons.Outlined.Notifications,
-                contentDescription = "Notifications & Reminders",
-                badgeCount = badgeCount,
-                onClick = onNotificationsClick,
-                testTag = "top_bar_bell_icon"
-            )
+            Spacer(modifier = Modifier.width(dimens.Space8))
 
-            // Theme toggle button
-            ThemeToggle(
-                isDark = isDark,
-                onToggle = onThemeToggle
-            )
+            // Right Action Items (Clock pill, Bell, Theme toggle on same row with 8dp spacing)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(dimens.Space8),
+                modifier = Modifier.testTag("app_top_bar_actions")
+            ) {
+                // Live clock pill
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(dimens.PillRadius))
+                        .background(
+                            if (colors.isDark) Color.White.copy(alpha = 0.07f) else Color.Black.copy(alpha = 0.05f)
+                        )
+                        .border(
+                            width = dimens.HairlineBorder,
+                            color = colors.cardBorder,
+                            shape = RoundedCornerShape(dimens.PillRadius)
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .testTag("live_clock_pill")
+                ) {
+                    Text(
+                        text = liveClockText,
+                        style = typography.timeText,
+                        color = colors.textPrimary,
+                        fontSize = 11.sp
+                    )
+                }
+
+                // Bell icon with badge
+                BadgedIcon(
+                    icon = Icons.Outlined.Notifications,
+                    contentDescription = "Notifications & Reminders",
+                    badgeCount = badgeCount,
+                    onClick = onNotificationsClick,
+                    testTag = "top_bar_bell_icon"
+                )
+
+                // Theme toggle button
+                ThemeToggle(
+                    isDark = isDark,
+                    onToggle = onThemeToggle
+                )
+            }
         }
     }
 }

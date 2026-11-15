@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,7 +32,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,8 +48,9 @@ data class BottomNavItem(
 
 /**
  * GlassBottomBar:
- * Translucent bottom bar with 4 items: Home, Routine, Tasks, Settings
- * Active item gets cyan icon + label + glow indicator dot
+ * Translucent bottom bar with 4 items: Home, Routine, Tasks, Settings.
+ * Always triggers onNavigate on tap.
+ * Active item gets cyan icon + label + glow indicator dot.
  */
 @Composable
 fun GlassBottomBar(
@@ -110,6 +111,7 @@ fun GlassBottomBar(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 48.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -121,7 +123,7 @@ fun GlassBottomBar(
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(32.dp)
                             .then(
                                 if (selected) {
                                     Modifier.drawBehind {
@@ -154,7 +156,7 @@ fun GlassBottomBar(
                         fontSize = 11.sp
                     )
 
-                    Spacer(modifier = Modifier.height(3.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
 
                     // Glow dot indicator for active tab
                     if (selected) {

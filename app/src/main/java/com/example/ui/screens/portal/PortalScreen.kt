@@ -22,12 +22,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -86,6 +89,10 @@ fun PortalScreen(
     viewModel: PortalViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val app = context.applicationContext as com.example.UniTrackApplication
+    val userPrefs by app.preferencesRepository.userPreferencesFlow.collectAsState(
+        initial = com.example.data.local.preferences.UserPreferences()
+    )
     val colors = UniTrackTheme.colors
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -133,7 +140,10 @@ fun PortalScreen(
         // Portal Top Toolbar
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 2.dp
+            tonalElevation = 2.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
         ) {
             Column {
                 Row(
@@ -179,50 +189,52 @@ fun PortalScreen(
                         }
                     }
 
-                    // Action buttons: Capture Page and Debug
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                UniTrackLogger.d("Capture button clicked in PortalScreen UI")
-                                viewModel.captureCurrentPage()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = colors.accentCyan,
-                                contentColor = colors.background
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .height(38.dp)
-                                .testTag("capture_page_button"),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                    // Action buttons: Capture Page and Debug (visible only when developer tools enabled)
+                    if (userPrefs.isDeveloperModeEnabled) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CameraAlt,
-                                contentDescription = "Capture",
-                                tint = colors.background,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Capture",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.background,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                            Button(
+                                onClick = {
+                                    UniTrackLogger.d("Capture button clicked in PortalScreen UI")
+                                    viewModel.captureCurrentPage()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = colors.accentCyan,
+                                    contentColor = colors.background
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .height(38.dp)
+                                    .testTag("capture_page_button"),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = "Capture",
+                                    tint = colors.background,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Capture",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.background,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
 
-                        IconButton(
-                            onClick = onNavigateToDebug,
-                            modifier = Modifier.testTag("open_parser_debug_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.BugReport,
-                                contentDescription = "Parser Debug",
-                                tint = colors.accentCyan
-                            )
+                            IconButton(
+                                onClick = onNavigateToDebug,
+                                modifier = Modifier.testTag("open_parser_debug_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.BugReport,
+                                    contentDescription = "Parser Debug",
+                                    tint = colors.accentCyan
+                                )
+                            }
                         }
                     }
                 }

@@ -18,6 +18,7 @@ import com.example.data.local.entity.TaskEntity
 import com.example.data.sync.PortalSyncWorker
 import com.example.ui.components.CoursePickerOption
 import com.example.util.CourseItemReminderScheduler
+import com.example.util.CourseMeetingSlot
 import com.example.util.DateTimeUtils
 import com.example.util.UniTrackLogger
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +51,7 @@ data class TodayUiState(
     val selectedDay: String = "",
     val selectedDayHeadline: String = "",
     val isViewingToday: Boolean = true,
+    val hasAnyRoutines: Boolean = false,
     val weekDays: List<DayChipItem> = emptyList(),
     val classes: List<ClassRoutineEntity> = emptyList(),
     val classesForSelectedDay: List<ClassRoutineEntity> = emptyList(),
@@ -212,6 +214,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                         courseName = firstR.courseName,
                         section = firstR.section,
                         routineDays = rList.map { it.dayOfWeek },
+                        meetingSlots = rList.map { CourseMeetingSlot(it.dayOfWeek, it.startTime, it.endTime) },
                         room = firstR.room
                     )
                 }
@@ -221,6 +224,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                         dayOfWeek = today,
                         selectedDay = currentSelectedDay,
                         isViewingToday = isToday,
+                        hasAnyRoutines = routines.isNotEmpty(),
                         weekDays = weekDays,
                         classes = todayClasses,
                         classesForSelectedDay = selectedDayClasses,

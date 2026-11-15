@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -114,6 +117,8 @@ fun CourseScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(colors.background)
+                    .windowInsetsPadding(WindowInsets.statusBars)
                     .padding(horizontal = dimens.ScreenPadding, vertical = dimens.Space8)
             ) {
                 Row(

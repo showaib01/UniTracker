@@ -34,7 +34,7 @@ import com.example.data.local.entity.TaskEntity
         CourseSettingEntity::class,
         CourseItemEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class UniTrackDatabase : RoomDatabase() {
@@ -131,6 +131,13 @@ abstract class UniTrackDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `class_routines` ADD COLUMN `lastSeen` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE `class_routines` SET `lastSeen` = ${System.currentTimeMillis()}")
+            }
+        }
+
         fun getDatabase(context: Context): UniTrackDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -138,8 +145,7 @@ abstract class UniTrackDatabase : RoomDatabase() {
                     UniTrackDatabase::class.java,
                     "unitrack_aiub.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                 INSTANCE = instance
                 instance

@@ -5,6 +5,19 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+data class CourseMeetingSlot(
+    val dayOfWeek: String,
+    val startTime: String,
+    val endTime: String,
+    val room: String = ""
+)
+
+data class NextMeetingInfo(
+    val millis: Long,
+    val hasTime: Boolean,
+    val room: String = ""
+)
+
 object DateTimeUtils {
 
     fun getCurrentDayOfWeek(): String {
@@ -207,6 +220,116 @@ object DateTimeUtils {
     }
 
     /**
+     * Calculates the nearest upcoming meeting slot for a course based on its routine slots.
+     * Picks today's meeting if today's class has not yet ended, or the nearest future meeting date, time, and room.
+     * If no meeting slots exist, returns fallback (tomorrow 8:00 AM, hasTime = false, room = "").
+     */
+    fun calculateNextMeetingSlotInfo(
+        meetingSlots: List<CourseMeetingSlot>,
+        nowMillis: Long = System.currentTimeMillis()
+    ): NextMeetingInfo {
+        if (meetingSlots.isEmpty()) {
+            val tomorrow = Calendar.getInstance().apply {
+                timeInMillis = nowMillis
+                add(Calendar.DAY_OF_YEAR, 1)
+                set(Calendar.HOUR_OF_DAY, 8)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            return NextMeetingInfo(tomorrow.timeInMillis, false, "")
+        }
+
+        val dayMap = mapOf(
+            "SUNDAY" to Calendar.SUNDAY,
+            "MONDAY" to Calendar.MONDAY,
+            "TUESDAY" to Calendar.TUESDAY,
+            "WEDNESDAY" to Calendar.WEDNESDAY,
+            "THURSDAY" to Calendar.THURSDAY,
+            "FRIDAY" to Calendar.FRIDAY,
+            "SATURDAY" to Calendar.SATURDAY
+        )
+
+        var nearestCandidateMillis: Long? = null
+        var nearestCandidateRoom = ""
+
+        for (slot in meetingSlots) {
+            val targetDayOfWeek = dayMap[slot.dayOfWeek.trim().uppercase()] ?: continue
+            val startMins = parseTimeToMinutes(slot.startTime)
+            val endMins = parseTimeToMinutes(slot.endTime)
+
+            val startHour = startMins / 60
+            val startMin = startMins % 60
+            val endHour = endMins / 60
+            val endMin = endMins % 60
+
+            for (dayOffset in 0..13) {
+                val candidateCal = Calendar.getInstance().apply {
+                    timeInMillis = nowMillis
+                    add(Calendar.DAY_OF_YEAR, dayOffset)
+                }
+
+                if (candidateCal.get(Calendar.DAY_OF_WEEK) == targetDayOfWeek) {
+                    candidateCal.set(Calendar.HOUR_OF_DAY, startHour)
+                    candidateCal.set(Calendar.MINUTE, startMin)
+                    candidateCal.set(Calendar.SECOND, 0)
+                    candidateCal.set(Calendar.MILLISECOND, 0)
+
+                    val candidateEndCal = Calendar.getInstance().apply {
+                        timeInMillis = candidateCal.timeInMillis
+                        set(Calendar.HOUR_OF_DAY, endHour)
+                        set(Calendar.MINUTE, endMin)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+
+                    val candStart = candidateCal.timeInMillis
+                    val currentBest = nearestCandidateMillis
+                    if (dayOffset == 0) {
+                        if (nowMillis < candidateEndCal.timeInMillis) {
+                            if (currentBest == null || candStart < currentBest) {
+                                nearestCandidateMillis = candStart
+                                nearestCandidateRoom = slot.room
+                            }
+                        }
+                    } else {
+                        if (currentBest == null || candStart < currentBest) {
+                            nearestCandidateMillis = candStart
+                            nearestCandidateRoom = slot.room
+                        }
+                    }
+                }
+            }
+        }
+
+        val resultMillis = nearestCandidateMillis ?: run {
+            val tomorrow = Calendar.getInstance().apply {
+                timeInMillis = nowMillis
+                add(Calendar.DAY_OF_YEAR, 1)
+                set(Calendar.HOUR_OF_DAY, 8)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            tomorrow.timeInMillis
+        }
+
+        return NextMeetingInfo(
+            millis = resultMillis,
+            hasTime = nearestCandidateMillis != null,
+            room = if (nearestCandidateMillis != null) nearestCandidateRoom else ""
+        )
+    }
+
+    fun calculateNextMeetingSlot(
+        meetingSlots: List<CourseMeetingSlot>,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Pair<Long, Boolean> {
+        val info = calculateNextMeetingSlotInfo(meetingSlots, nowMillis)
+        return Pair(info.millis, info.hasTime)
+    }
+
+    /**
      * Calculates the next calendar date (in millis) when this course meets,
      * based on the list of routine days of the week (e.g. ["Sunday", "Tuesday"]).
      */
@@ -215,7 +338,6 @@ object DateTimeUtils {
         nowMillis: Long = System.currentTimeMillis()
     ): Long {
         if (routineDays.isEmpty()) {
-            // Default to tomorrow
             val tomorrow = Calendar.getInstance().apply {
                 timeInMillis = nowMillis
                 add(Calendar.DAY_OF_YEAR, 1)
@@ -254,7 +376,6 @@ object DateTimeUtils {
             set(Calendar.MILLISECOND, 0)
         }
 
-        // Look up to 7 days ahead (starting from tomorrow so it's the NEXT class)
         for (i in 1..7) {
             searchCal.add(Calendar.DAY_OF_YEAR, 1)
             val dayOfWeek = searchCal.get(Calendar.DAY_OF_WEEK)
@@ -309,7 +430,7 @@ object DateTimeUtils {
         }
     }
 
-    private fun parseTimeToMinutes(timeStr: String): Int {
+    fun parseTimeToMinutes(timeStr: String): Int {
         val cleaned = timeStr.trim().uppercase()
         val isPm = cleaned.contains("PM")
         val isAm = cleaned.contains("AM")

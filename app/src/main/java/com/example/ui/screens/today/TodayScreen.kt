@@ -581,11 +581,21 @@ fun TodayScreen(
                 }
             } else {
                 item {
-                    EmptyState(
-                        title = "No classes scheduled",
-                        message = "No classes scheduled for ${uiState.selectedDay}.",
-                        icon = Icons.Outlined.EventBusy
-                    )
+                    if (!uiState.hasAnyRoutines) {
+                        EmptyState(
+                            title = "No classes yet",
+                            message = "Log in to the AIUB Student Portal to load your routine.",
+                            icon = Icons.Outlined.EventBusy,
+                            actionButtonText = "Open AIUB Student Portal",
+                            onActionClick = onNavigateToPortal
+                        )
+                    } else {
+                        EmptyState(
+                            title = "No classes scheduled",
+                            message = "No classes scheduled for ${uiState.selectedDay}.",
+                            icon = Icons.Outlined.EventBusy
+                        )
+                    }
                 }
             }
 

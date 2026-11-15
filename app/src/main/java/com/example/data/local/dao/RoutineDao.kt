@@ -59,11 +59,35 @@ interface RoutineDao {
     @Query("DELETE FROM class_routines")
     suspend fun clearAll()
 
+    @Query("DELETE FROM class_routines WHERE dayOfWeek IN (:days)")
+    suspend fun deleteRoutinesForDays(days: List<String>)
+
+    @Query("DELETE FROM class_routines WHERE lastSeen < :cutoffTimestamp")
+    suspend fun purgeOlderThan(cutoffTimestamp: Long)
+
+    @Transaction
+    suspend fun syncRoutinesPerDay(
+        newRoutines: List<ClassRoutineEntity>,
+        syncTimestamp: Long = System.currentTimeMillis()
+    ) {
+        if (newRoutines.isEmpty()) return
+
+        val distinctDays = newRoutines.map { it.dayOfWeek }.distinct()
+        deleteRoutinesForDays(distinctDays)
+
+        val routinesToInsert = newRoutines.map { routine ->
+            routine.copy(lastSeen = syncTimestamp)
+        }
+        insertRoutines(routinesToInsert)
+
+        val twentyOneDaysAgo = syncTimestamp - (21L * 24 * 3600 * 1000L)
+        purgeOlderThan(twentyOneDaysAgo)
+    }
+
     @Transaction
     suspend fun replaceAllRoutines(routines: List<ClassRoutineEntity>) {
         if (routines.isNotEmpty()) {
-            clearAll()
-            insertRoutines(routines)
+            syncRoutinesPerDay(routines)
         }
     }
 }

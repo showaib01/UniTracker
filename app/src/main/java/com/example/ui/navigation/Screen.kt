@@ -3,16 +3,16 @@ package com.example.ui.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.ui.graphics.vector.ImageVector
 
 sealed class Screen(val route: String, val titleRes: Int, val icon: ImageVector? = null) {
-    // 4 Bottom Bar tabs only: Today, Routine, Tasks, More
+    // 4 Bottom Bar tabs only: Today, Routine, Tasks, Settings
     object Today : Screen("today", com.example.R.string.nav_today, Icons.Outlined.Today)
     object Routine : Screen("routine", com.example.R.string.nav_routine, Icons.Outlined.CalendarMonth)
     object Tasks : Screen("tasks", com.example.R.string.nav_tasks, Icons.Outlined.CheckCircle)
-    object More : Screen("more", com.example.R.string.nav_more, Icons.Outlined.Menu)
+    object More : Screen("more", com.example.R.string.settings_title, Icons.Outlined.Settings)
 
     // Sub-screens
     object Portal : Screen("portal", com.example.R.string.portal_title)

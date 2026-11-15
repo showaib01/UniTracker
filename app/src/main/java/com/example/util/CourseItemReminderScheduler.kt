@@ -150,6 +150,10 @@ object CourseItemReminderScheduler {
         WorkManager.getInstance(context).cancelAllWorkByTag("reminder_item_$itemId")
     }
 
+    fun cancelAllReminders(context: Context) {
+        WorkManager.getInstance(context).cancelAllWork()
+    }
+
     fun rescheduleAll(context: Context, items: List<CourseItemEntity>) {
         for (item in items) {
             scheduleItemReminders(context, item)

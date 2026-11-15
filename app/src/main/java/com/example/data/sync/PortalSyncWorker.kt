@@ -137,10 +137,11 @@ class PortalSyncWorker(
                 }
             }
 
-            // Update timestamp & session status if any data was parsed
+            // Update timestamp, session status & rebuild exact 14-day alarms if any data was parsed
             if (routineSavedCount > 0 || attendanceSavedCount > 0) {
                 prefsRepo.updateLastSyncTimestamp()
                 prefsRepo.updateSessionActive(true)
+                com.example.util.UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(context)
             }
 
             // Format UI result message

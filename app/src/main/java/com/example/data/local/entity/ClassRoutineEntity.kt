@@ -25,5 +25,6 @@ data class ClassRoutineEntity(
     val room: String,
     val faculty: String,
     val semester: String = "Spring 2026-2027",
-    val lastUpdated: Long = System.currentTimeMillis()
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val lastSeen: Long = System.currentTimeMillis()
 )
