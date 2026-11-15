@@ -4,11 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.UniTrackApplication
+import com.example.data.local.entity.AttendanceEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseItemEntity
 import com.example.data.local.entity.CourseItemStatus
 import com.example.data.local.entity.CourseSettingEntity
+import com.example.ui.components.CoursePickerOption
 import com.example.util.CourseItemReminderScheduler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +25,8 @@ data class CourseUiState(
     val section: String = "",
     val routines: List<ClassRoutineEntity> = emptyList(),
     val setting: CourseSettingEntity? = null,
+    val attendance: AttendanceEntity? = null,
+    val attendanceThreshold: Int = 80,
     val upcomingItems: List<CourseItemEntity> = emptyList(),
     val pastItems: List<CourseItemEntity> = emptyList(),
     val isPastExpanded: Boolean = false,
@@ -42,7 +47,9 @@ class CourseViewModel(
     private val app = application as UniTrackApplication
     private val courseItemDao = app.database.courseItemDao()
     private val routineDao = app.database.routineDao()
+    private val attendanceDao = app.database.attendanceDao()
     private val courseSettingDao = app.database.courseSettingDao()
+    private val prefsRepo = app.preferencesRepository
 
     private val _uiState = MutableStateFlow(CourseUiState(courseKey = targetCourseKey))
     val uiState: StateFlow<CourseUiState> = _uiState.asStateFlow()
@@ -67,8 +74,16 @@ class CourseViewModel(
 
             combine(
                 courseItemDao.getItemsForCourse(key),
-                courseSettingDao.getSetting(key)
-            ) { items, setting ->
+                attendanceDao.getAllAttendance(),
+                courseSettingDao.getSetting(key),
+                prefsRepo.userPreferencesFlow
+            ) { items, attendanceList, setting, prefs ->
+                val att = attendanceList.firstOrNull {
+                    it.courseName.equals(cName, ignoreCase = true) &&
+                            (sec.isBlank() || it.section.equals(sec, ignoreCase = true))
+                } ?: attendanceList.firstOrNull { it.courseName.equals(cName, ignoreCase = true) }
+
+                val now = System.currentTimeMillis()
                 val upcoming = items.filter { it.status == CourseItemStatus.TODO }
                     .sortedBy { it.dueAt }
                 val past = items.filter { it.status != CourseItemStatus.TODO }
@@ -83,6 +98,8 @@ class CourseViewModel(
                     section = sec,
                     routines = matchedRoutines,
                     setting = setting,
+                    attendance = att,
+                    attendanceThreshold = prefs.attendanceThreshold,
                     upcomingItems = upcoming,
                     pastItems = past,
                     isRemindersMuted = isMuted,
@@ -92,106 +109,129 @@ class CourseViewModel(
         }
     }
 
-    fun toggleReminders(muted: Boolean) {
-        viewModelScope.launch {
-            val currentSetting = uiState.value.setting
-            val enabled = !muted
-            if (currentSetting != null) {
-                courseSettingDao.insertOrUpdate(currentSetting.copy(notificationsEnabled = enabled, updatedAt = System.currentTimeMillis()))
+    fun togglePastExpanded() {
+        _uiState.value = _uiState.value.copy(isPastExpanded = !_uiState.value.isPastExpanded)
+    }
+
+    fun openAddItem(type: String? = null) {
+        _uiState.value = _uiState.value.copy(
+            showAddEditSheet = true,
+            editingItem = null,
+            initialAddType = type
+        )
+    }
+
+    fun openEditItem(item: CourseItemEntity) {
+        _uiState.value = _uiState.value.copy(
+            showAddEditSheet = true,
+            editingItem = item,
+            initialAddType = item.type
+        )
+    }
+
+    fun dismissAddEditSheet() {
+        _uiState.value = _uiState.value.copy(
+            showAddEditSheet = false,
+            editingItem = null,
+            initialAddType = null
+        )
+    }
+
+    fun saveItem(item: CourseItemEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = if (item.id == 0L) {
+                courseItemDao.insertItem(item)
             } else {
-                courseSettingDao.insertOrUpdate(
-                    CourseSettingEntity(
-                        courseKey = uiState.value.courseKey,
-                        courseName = uiState.value.courseName,
-                        section = uiState.value.section,
-                        notificationsEnabled = enabled,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                )
+                courseItemDao.updateItem(item)
+                item.id
             }
-            com.example.util.UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(getApplication())
+            CourseItemReminderScheduler.scheduleItemReminders(
+                app,
+                item.copy(id = id)
+            )
+            dismissAddEditSheet()
         }
     }
 
-    fun toggleDropped(dropped: Boolean) {
-        viewModelScope.launch {
-            val currentSetting = uiState.value.setting
-            if (currentSetting != null) {
-                courseSettingDao.insertOrUpdate(currentSetting.copy(isDropped = dropped, updatedAt = System.currentTimeMillis()))
+    fun toggleItemDone(item: CourseItemEntity, isDone: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newStatus = if (isDone) CourseItemStatus.DONE else CourseItemStatus.TODO
+            courseItemDao.updateStatus(item.id, newStatus)
+            if (isDone) {
+                CourseItemReminderScheduler.cancelItemReminders(app, item.id)
             } else {
-                courseSettingDao.insertOrUpdate(
-                    CourseSettingEntity(
-                        courseKey = uiState.value.courseKey,
-                        courseName = uiState.value.courseName,
-                        section = uiState.value.section,
-                        isDropped = dropped,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                )
-            }
-            com.example.util.UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(getApplication())
-        }
-    }
-
-    fun toggleItemDone(item: CourseItemEntity, done: Boolean) {
-        viewModelScope.launch {
-            val newStatus = if (done) CourseItemStatus.DONE else CourseItemStatus.TODO
-            val updated = item.copy(status = newStatus)
-            courseItemDao.insertItem(updated)
-            if (done) {
-                CourseItemReminderScheduler.cancelItemReminders(getApplication<UniTrackApplication>(), item.id)
-                _uiState.value = _uiState.value.copy(snackbarMessage = "Marked as done", recentlyDeletedItem = null)
-            } else {
-                CourseItemReminderScheduler.scheduleItemReminders(getApplication<UniTrackApplication>(), updated)
-                _uiState.value = _uiState.value.copy(snackbarMessage = "Marked as todo", recentlyDeletedItem = null)
+                CourseItemReminderScheduler.scheduleItemReminders(app, item.copy(status = newStatus))
             }
         }
     }
 
     fun deleteItem(item: CourseItemEntity) {
-        viewModelScope.launch {
-            CourseItemReminderScheduler.cancelItemReminders(getApplication<UniTrackApplication>(), item.id)
+        viewModelScope.launch(Dispatchers.IO) {
             courseItemDao.deleteItem(item)
-            _uiState.value = _uiState.value.copy(snackbarMessage = "Item deleted", recentlyDeletedItem = item)
+            CourseItemReminderScheduler.cancelItemReminders(app, item.id)
+            _uiState.value = _uiState.value.copy(
+                recentlyDeletedItem = item,
+                snackbarMessage = "Deleted ${item.title}"
+            )
+            dismissAddEditSheet()
         }
     }
 
     fun undoDelete() {
-        val item = uiState.value.recentlyDeletedItem ?: return
-        viewModelScope.launch {
-            courseItemDao.insertItem(item)
-            CourseItemReminderScheduler.scheduleItemReminders(getApplication<UniTrackApplication>(), item)
-            _uiState.value = _uiState.value.copy(snackbarMessage = "Restored", recentlyDeletedItem = null)
+        val deleted = _uiState.value.recentlyDeletedItem ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = courseItemDao.insertItem(deleted)
+            CourseItemReminderScheduler.scheduleItemReminders(app, deleted.copy(id = id))
+            _uiState.value = _uiState.value.copy(
+                recentlyDeletedItem = null,
+                snackbarMessage = null
+            )
         }
-    }
-
-    fun openAddItem(type: String? = null) {
-        _uiState.value = _uiState.value.copy(showAddEditSheet = true, editingItem = null, initialAddType = type)
-    }
-
-    fun openEditItem(item: CourseItemEntity) {
-        _uiState.value = _uiState.value.copy(showAddEditSheet = true, editingItem = item, initialAddType = null)
-    }
-
-    fun closeAddEditSheet() {
-        _uiState.value = _uiState.value.copy(showAddEditSheet = false, editingItem = null, initialAddType = null)
-    }
-
-    fun saveCourseItem(item: CourseItemEntity) {
-        viewModelScope.launch {
-            val id = courseItemDao.insertItem(item)
-            val savedItem = item.copy(id = if (item.id == 0L) id else item.id)
-            CourseItemReminderScheduler.scheduleItemReminders(getApplication<UniTrackApplication>(), savedItem)
-            closeAddEditSheet()
-            _uiState.value = _uiState.value.copy(snackbarMessage = "Item saved")
-        }
-    }
-
-    fun togglePastExpanded() {
-        _uiState.value = _uiState.value.copy(isPastExpanded = !uiState.value.isPastExpanded)
     }
 
     fun clearSnackbar() {
         _uiState.value = _uiState.value.copy(snackbarMessage = null)
+    }
+
+    fun toggleMuteReminders() {
+        val curKey = _uiState.value.courseKey
+        val newMuted = !_uiState.value.isRemindersMuted
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = courseSettingDao.getSettingDirect(curKey)
+            if (existing != null) {
+                courseSettingDao.setNotificationsEnabled(curKey, !newMuted)
+            } else {
+                courseSettingDao.insertOrUpdate(
+                    CourseSettingEntity(
+                        courseKey = curKey,
+                        courseName = _uiState.value.courseName,
+                        section = _uiState.value.section,
+                        notificationsEnabled = !newMuted,
+                        isDropped = false
+                    )
+                )
+            }
+        }
+    }
+
+    fun toggleDropCourse() {
+        val curKey = _uiState.value.courseKey
+        val newDropped = !_uiState.value.isDropped
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = courseSettingDao.getSettingDirect(curKey)
+            if (existing != null) {
+                courseSettingDao.setDropped(curKey, newDropped)
+            } else {
+                courseSettingDao.insertOrUpdate(
+                    CourseSettingEntity(
+                        courseKey = curKey,
+                        courseName = _uiState.value.courseName,
+                        section = _uiState.value.section,
+                        notificationsEnabled = true,
+                        isDropped = newDropped
+                    )
+                )
+            }
+        }
     }
 }
