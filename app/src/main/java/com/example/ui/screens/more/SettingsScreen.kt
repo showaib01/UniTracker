@@ -140,8 +140,6 @@ fun SettingsScreen(
 
     var showAppearanceDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
-    var showThresholdDialog by remember { mutableStateOf(false) }
-    var showPortalUrlDialog by remember { mutableStateOf(false) }
     var showReminderMinutesDialog by remember { mutableStateOf(false) }
     var showClassesDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -403,7 +401,7 @@ fun SettingsScreen(
         )
     }
 
-    // Dialogs for Appearance, Language, Threshold, Portal URL, Reminder Minutes, Classes, About
+    // Dialogs for Appearance, Language, Reminder Minutes, Classes, About
     if (showAppearanceDialog) {
         AlertDialog(
             onDismissRequest = { showAppearanceDialog = false },
@@ -472,75 +470,7 @@ fun SettingsScreen(
         )
     }
 
-    if (showThresholdDialog) {
-        var sliderVal by remember { mutableFloatStateOf(userPrefs.attendanceThreshold.toFloat()) }
-        AlertDialog(
-            onDismissRequest = { showThresholdDialog = false },
-            title = { Text(stringResource(R.string.settings_attendance_threshold), style = typography.sectionTitle) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Warning threshold: ${sliderVal.toInt()}%", style = typography.body, color = colors.textPrimary)
-                    Slider(
-                        value = sliderVal,
-                        onValueChange = { sliderVal = it },
-                        valueRange = 50f..100f,
-                        steps = 9,
-                        colors = SliderDefaults.colors(thumbColor = colors.accentCyan, activeTrackColor = colors.accentCyan)
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch { prefsRepo.updateAttendanceThreshold(sliderVal.toInt()) }
-                        showThresholdDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.accentCyan, contentColor = colors.background)
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showThresholdDialog = false }) {
-                    Text("Cancel", color = colors.textSecondary)
-                }
-            }
-        )
-    }
 
-    if (showPortalUrlDialog) {
-        var urlInput by remember { mutableStateOf(userPrefs.portalUrl) }
-        AlertDialog(
-            onDismissRequest = { showPortalUrlDialog = false },
-            title = { Text(stringResource(R.string.settings_portal_url), style = typography.sectionTitle) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = urlInput,
-                        onValueChange = { urlInput = it },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.accentCyan)
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch { prefsRepo.updatePortalUrl(urlInput) }
-                        showPortalUrlDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.accentCyan, contentColor = colors.background)
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPortalUrlDialog = false }) {
-                    Text("Cancel", color = colors.textSecondary)
-                }
-            }
-        )
-    }
 
     if (showReminderMinutesDialog) {
         AlertDialog(
@@ -711,7 +641,7 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("UniTrack v1.0.0", style = typography.body, fontWeight = FontWeight.Bold, color = colors.textPrimary)
                     Text("Offline-first academic assistant for American International University-Bangladesh (AIUB).", style = typography.body, color = colors.textSecondary)
-                    Text("Features secure student portal login, OCR captcha solver, automated class routines, attendance tracking, offline course materials and task reminders.", style = typography.meta, color = colors.textSecondary)
+                    Text("Features secure student portal login, OCR captcha solver, automated class routines, offline course materials and task reminders.", style = typography.meta, color = colors.textSecondary)
                 }
             },
             confirmButton = {
@@ -1015,7 +945,7 @@ fun SettingsScreen(
 
                             SettingsRow(
                                 title = "Language",
-                                subtitle = if (userPrefs.language == "bn") "বাংলা (Bangla)" else "English",
+                                subtitle = "English",
                                 icon = Icons.Outlined.Language,
                                 iconTint = colors.accentCyan,
                                 trailingContent = {
@@ -1028,44 +958,6 @@ fun SettingsScreen(
                                 },
                                 onClick = { showLanguageDialog = true },
                                 testTag = "settings_language_row"
-                            )
-
-                            SettingsRowDivider()
-
-                            SettingsRow(
-                                title = "Attendance warning threshold",
-                                subtitle = "Warn when attendance drops below ${userPrefs.attendanceThreshold}%",
-                                icon = Icons.Outlined.Warning,
-                                iconTint = colors.warning,
-                                trailingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ChevronRight,
-                                        contentDescription = null,
-                                        tint = colors.textSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                onClick = { showThresholdDialog = true },
-                                testTag = "settings_threshold_row"
-                            )
-
-                            SettingsRowDivider()
-
-                            SettingsRow(
-                                title = "Portal URL",
-                                subtitle = userPrefs.portalUrl,
-                                icon = Icons.Outlined.Link,
-                                iconTint = colors.accentCyan,
-                                trailingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ChevronRight,
-                                        contentDescription = null,
-                                        tint = colors.textSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                onClick = { showPortalUrlDialog = true },
-                                testTag = "settings_portal_url_row"
                             )
                         }
                     }

@@ -9,7 +9,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.example.UniTrackApplication
-import com.example.data.local.entity.AttendanceEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseItemEntity
 import com.example.data.local.entity.CourseItemStatus
@@ -66,7 +65,6 @@ data class TodayUiState(
     // Due Soon Items (next 3)
     val dueSoonItems: List<CourseItemEntity> = emptyList(),
     val overdueAndDueTodayCount: Int = 0,
-    val attendanceAlerts: List<AttendanceEntity> = emptyList(),
     val lastSyncedText: String = "Never",
     val isSessionActive: Boolean = false,
     val isSyncing: Boolean = false,
@@ -75,7 +73,6 @@ data class TodayUiState(
     val facultyNamesByCourseKey: Map<String, String> = emptyMap(),
     // Class Detail Sheet
     val selectedClass: ClassRoutineEntity? = null,
-    val selectedClassAttendance: AttendanceEntity? = null,
     val selectedClassTasks: List<TaskEntity> = emptyList(),
     val selectedClassReminderEnabled: Boolean = true,
     // Add/Edit Item Sheet
@@ -92,7 +89,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as UniTrackApplication
     private val routineDao = app.database.routineDao()
-    private val attendanceDao = app.database.attendanceDao()
     private val taskDao = app.database.taskDao()
     private val courseItemDao = app.database.courseItemDao()
     private val courseSettingDao = app.database.courseSettingDao()
@@ -139,9 +135,8 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             combine(
                 routineDao.getAllRoutines(),
                 courseItemDao.getUpcomingActiveItems(10),
-                attendanceDao.getAllAttendance(),
                 settingsAndPrefsFlow
-            ) { routines, dueItems, attendanceList, (settingsList, preferences) ->
+            ) { routines, dueItems, (settingsList, preferences) ->
                 allRoutinesCache = routines
 
                 val today = DateTimeUtils.getCurrentDayOfWeek()
@@ -185,11 +180,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 val tomorrowDay = getTomorrowDayOfWeek(today)
                 val tomorrowClasses = routines.filter { it.dayOfWeek.equals(tomorrowDay, ignoreCase = true) }
                 val firstTomorrow = tomorrowClasses.minByOrNull { it.startTime }
-
-                val threshold = preferences.attendanceThreshold
-                val alerts = attendanceList.filter {
-                    it.totalClasses > 0 && it.percentage < threshold
-                }
 
                 // Count overdue and due today
                 val overdueOrDueTodayCount = dueItems.count {
@@ -236,7 +226,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                         firstClassTomorrow = firstTomorrow,
                         dueSoonItems = dueItems.take(3),
                         overdueAndDueTodayCount = overdueOrDueTodayCount,
-                        attendanceAlerts = alerts,
                         lastSyncedText = lastSync,
                         isSessionActive = preferences.isSessionActive,
                         isOffline = isOffline,
@@ -387,7 +376,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     selectedClass = null,
-                    selectedClassAttendance = null,
                     selectedClassTasks = emptyList()
                 )
             }
@@ -395,14 +383,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            val allAttendance = attendanceDao.getAllAttendanceDirect()
-            val att = allAttendance.firstOrNull {
-                it.courseName.equals(routine.courseName, ignoreCase = true) &&
-                        it.section.equals(routine.section, ignoreCase = true)
-            } ?: allAttendance.firstOrNull {
-                it.courseName.equals(routine.courseName, ignoreCase = true)
-            }
-
             val allTasks = taskDao.getAllTasksDirect()
             val tasks = allTasks.filter {
                 it.courseName.equals(routine.courseName, ignoreCase = true)
@@ -415,7 +395,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     selectedClass = routine,
-                    selectedClassAttendance = att,
                     selectedClassTasks = tasks,
                     selectedClassReminderEnabled = isRemEnabled
                 )

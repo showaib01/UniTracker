@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.UniTrackApplication
-import com.example.data.local.entity.AttendanceEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseItemEntity
 import com.example.data.local.entity.CourseItemStatus
@@ -25,8 +24,6 @@ data class CourseUiState(
     val section: String = "",
     val routines: List<ClassRoutineEntity> = emptyList(),
     val setting: CourseSettingEntity? = null,
-    val attendance: AttendanceEntity? = null,
-    val attendanceThreshold: Int = 80,
     val upcomingItems: List<CourseItemEntity> = emptyList(),
     val pastItems: List<CourseItemEntity> = emptyList(),
     val isPastExpanded: Boolean = false,
@@ -47,9 +44,7 @@ class CourseViewModel(
     private val app = application as UniTrackApplication
     private val courseItemDao = app.database.courseItemDao()
     private val routineDao = app.database.routineDao()
-    private val attendanceDao = app.database.attendanceDao()
     private val courseSettingDao = app.database.courseSettingDao()
-    private val prefsRepo = app.preferencesRepository
 
     private val _uiState = MutableStateFlow(CourseUiState(courseKey = targetCourseKey))
     val uiState: StateFlow<CourseUiState> = _uiState.asStateFlow()
@@ -74,15 +69,8 @@ class CourseViewModel(
 
             combine(
                 courseItemDao.getItemsForCourse(key),
-                attendanceDao.getAllAttendance(),
-                courseSettingDao.getSetting(key),
-                prefsRepo.userPreferencesFlow
-            ) { items, attendanceList, setting, prefs ->
-                val att = attendanceList.firstOrNull {
-                    it.courseName.equals(cName, ignoreCase = true) &&
-                            (sec.isBlank() || it.section.equals(sec, ignoreCase = true))
-                } ?: attendanceList.firstOrNull { it.courseName.equals(cName, ignoreCase = true) }
-
+                courseSettingDao.getSetting(key)
+            ) { items, setting ->
                 val now = System.currentTimeMillis()
                 val upcoming = items.filter { it.status == CourseItemStatus.TODO }
                     .sortedBy { it.dueAt }
@@ -98,8 +86,6 @@ class CourseViewModel(
                     section = sec,
                     routines = matchedRoutines,
                     setting = setting,
-                    attendance = att,
-                    attendanceThreshold = prefs.attendanceThreshold,
                     upcomingItems = upcoming,
                     pastItems = past,
                     isRemindersMuted = isMuted,

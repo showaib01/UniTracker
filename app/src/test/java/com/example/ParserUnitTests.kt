@@ -1,6 +1,5 @@
 package com.example
 
-import com.example.data.parser.AttendanceParser
 import com.example.data.parser.PortalSelectorConfig
 import com.example.data.parser.RoutineParser
 import org.junit.Assert.assertEquals
@@ -172,28 +171,7 @@ class ParserUnitTests {
         assertTrue(noTableResult.warnings.isNotEmpty())
     }
 
-    @Test
-    fun testAttendanceParserWithSampleHtml() {
-        val html = loadResource("sample_attendance.html")
-        val parser = AttendanceParser()
 
-        assertTrue("Parser should recognize attendance HTML", parser.canParse(html))
-
-        val result = parser.parse(html)
-        assertTrue("Parser should succeed", result.isSuccess)
-
-        val records = result.data
-        assertEquals("Should extract 4 valid attendance records", 4, records.size)
-
-        // Record 1: Operating Systems
-        val r1 = records[0]
-        assertEquals("CSC 3211", r1.courseCode)
-        assertEquals("Operating Systems", r1.courseName)
-        assertEquals("A", r1.section)
-        assertEquals(14, r1.attendedCount)
-        assertEquals(16, r1.totalClasses)
-        assertEquals(87.5f, r1.percentage, 0.1f)
-    }
 
     @Test
     fun testTimeFormatting12Hour() {

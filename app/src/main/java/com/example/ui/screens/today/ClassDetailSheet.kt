@@ -51,7 +51,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
-import com.example.data.local.entity.AttendanceEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseSettingEntity
 import com.example.data.local.entity.TaskEntity
@@ -61,13 +60,12 @@ import com.example.ui.theme.UniTrackTheme
 import com.example.util.DateTimeUtils
 
 /**
- * Editorial modal bottom sheet for displaying class details, attendance, tasks, and Google Drive notes.
+ * Editorial modal bottom sheet for displaying class details, tasks, and Google Drive notes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClassDetailSheet(
     routine: ClassRoutineEntity,
-    attendance: AttendanceEntity?,
     tasks: List<TaskEntity>,
     isReminderEnabled: Boolean,
     onToggleReminder: (Boolean) -> Unit,
@@ -159,42 +157,6 @@ fun ClassDetailSheet(
                             color = colors.accentCyan
                         )
                     }
-                }
-            }
-
-            // Attendance line if available
-            if (attendance != null && attendance.totalClasses > 0) {
-                Spacer(modifier = Modifier.height(8.dp))
-                val isBelowThreshold = attendance.percentage < 80f
-                val attendanceColor = if (isBelowThreshold) colors.warning else colors.success
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(dimens.BoxRadius))
-                        .border(dimens.HairlineBorder, colors.cardBorder, RoundedCornerShape(dimens.BoxRadius))
-                        .background(colors.surfaceField)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(attendanceColor)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(
-                            R.string.attendance_attended_summary,
-                            attendance.attendedCount,
-                            attendance.totalClasses,
-                            attendance.percentage.toInt()
-                        ),
-                        style = typography.meta,
-                        color = colors.textPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
                 }
             }
 

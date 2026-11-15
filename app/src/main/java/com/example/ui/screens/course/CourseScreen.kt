@@ -348,56 +348,6 @@ fun CourseScreen(
                 }
             }
 
-            // Attendance Summary & Calculator
-            uiState.attendance?.let { att ->
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, colors.hairline, RoundedCornerShape(dimens.RadiusCard))
-                            .background(colors.surface, RoundedCornerShape(dimens.RadiusCard))
-                            .padding(dimens.CardPadding)
-                    ) {
-                        Text(
-                            text = "ATTENDANCE",
-                            style = typography.sectionTitle,
-                            color = colors.secondary
-                        )
-                        Spacer(modifier = Modifier.height(dimens.Space8))
-
-                        val percentage = if (att.totalClasses > 0) {
-                            (att.attendedCount.toFloat() / att.totalClasses.toFloat()) * 100f
-                        } else 0f
-                        val isWarning = percentage < uiState.attendanceThreshold
-
-                        Text(
-                            text = "Attended ${att.attendedCount} of ${att.totalClasses} · ${String.format("%.1f", percentage)}%",
-                            style = typography.classTitle.copy(fontSize = 15.sp),
-                            color = if (isWarning) colors.red else colors.ink
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-                        // Bunk/Attend calculation
-                        val thresholdRatio = uiState.attendanceThreshold / 100.0
-                        if (isWarning) {
-                            val mustAttend = kotlin.math.ceil((thresholdRatio * att.totalClasses - att.attendedCount) / (1.0 - thresholdRatio)).toInt().coerceAtLeast(1)
-                            Text(
-                                text = "Must attend the next $mustAttend classes to reach ${uiState.attendanceThreshold}%",
-                                style = typography.metaText,
-                                color = colors.amber
-                            )
-                        } else {
-                            val canMiss = kotlin.math.floor((att.attendedCount - thresholdRatio * att.totalClasses) / thresholdRatio).toInt().coerceAtLeast(0)
-                            Text(
-                                text = if (canMiss > 0) "Can safely miss $canMiss upcoming classes" else "Maintain attendance to stay above ${uiState.attendanceThreshold}%",
-                                style = typography.metaText,
-                                color = colors.green
-                            )
-                        }
-                    }
-                }
-            }
-
             // NOTES section
             item {
                 Column(
