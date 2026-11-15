@@ -15,13 +15,13 @@ sealed class Screen(val route: String, val titleRes: Int, val icon: ImageVector?
     object More : Screen("more", com.example.R.string.settings_title, Icons.Outlined.Settings)
 
     // Sub-screens
-    object Portal : Screen("portal", com.example.R.string.portal_title)
-    object PageCapture : Screen("page_capture", com.example.R.string.capture_title)
-    object ParserDebug : Screen("parser_debug", com.example.R.string.debug_title)
+    object Portal : Screen("portal?courseKey={courseKey}", com.example.R.string.portal_title) {
+        fun createRoute(courseKey: String? = null): String = if (courseKey != null) "portal?courseKey=${java.net.URLEncoder.encode(courseKey, "UTF-8")}" else "portal"
+    }
     object Settings : Screen("settings", com.example.R.string.settings_title)
     object Notices : Screen("notices", com.example.R.string.more_notices)
-    object DebugLog : Screen("debug_log", com.example.R.string.debug_title)
-    object DesignSystem : Screen("design_system", com.example.R.string.app_name)
+    object CourseMaterials : Screen("course_materials", com.example.R.string.app_name)
+    object Downloads : Screen("downloads", com.example.R.string.app_name)
     object Course : Screen("course/{courseKey}", com.example.R.string.app_name) {
         fun createRoute(courseKey: String): String = "course/${java.net.URLEncoder.encode(courseKey, "UTF-8")}"
     }

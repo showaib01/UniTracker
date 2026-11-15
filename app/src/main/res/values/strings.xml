@@ -111,4 +111,14 @@
     <string name="tasks_completed">COMPLETED</string>
     <string name="settings_all_reminders">All Reminders</string>
     <string name="settings_default_reminder_offsets">Default Reminder Offsets</string>
+    <string name="settings_forget_login">Forget saved login</string>
+    <string name="settings_forget_login_subtitle">Remove saved ID &amp; password</string>
+    <string name="settings_forget_login_confirm">Are you sure you want to remove your saved login credentials and log out of the portal?</string>
+    <string name="settings_downloads_section">DOWNLOADS</string>
+    <string name="settings_course_materials">Course materials</string>
+    <string name="settings_course_materials_subtitle">Download from the online portal by course</string>
+    <string name="settings_my_downloads">My downloads</string>
+    <string name="settings_my_downloads_subtitle">Files saved in course folders</string>
+    <string name="downloads_select_course_folder_title">Save download to course folder</string>
+    <string name="downloads_select_course_folder_other">Other / General</string>
 </resources>

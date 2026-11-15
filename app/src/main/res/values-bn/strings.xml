@@ -112,4 +112,14 @@
     <string name="tasks_completed">সম্পন্ন</string>
     <string name="settings_all_reminders">সব রিমাইন্ডার</string>
     <string name="settings_default_reminder_offsets">ডিফল্ট রিমাইন্ডার সময়</string>
+    <string name="settings_forget_login">সংরক্ষিত লগইন মুছুন</string>
+    <string name="settings_forget_login_subtitle">সংরক্ষিত আইডি ও পাসওয়ার্ড মুছে ফেলুন</string>
+    <string name="settings_forget_login_confirm">আপনি কি নিশ্চিত যে সংরক্ষিত লগইন মুছে ফেলতে চান এবং পোর্টাল থেকে লগআউট করতে চান?</string>
+    <string name="settings_downloads_section">ডাউনলোড</string>
+    <string name="settings_course_materials">কোর্স উপকরণ</string>
+    <string name="settings_course_materials_subtitle">অনলাইন পোর্টাল থেকে কোর্স ভিত্তিক ফাইল ডাউনলোড করুন</string>
+    <string name="settings_my_downloads">মাই ডাউনলোডস</string>
+    <string name="settings_my_downloads_subtitle">কোর্স ফোল্ডারে সংরক্ষিত অফলাইন ফাইলসমূহ</string>
+    <string name="downloads_select_course_folder_title">কোর্স ফোল্ডারে ফাইল সংরক্ষণ করুন</string>
+    <string name="downloads_select_course_folder_other">অন্যান্য / সাধারণ</string>
 </resources>

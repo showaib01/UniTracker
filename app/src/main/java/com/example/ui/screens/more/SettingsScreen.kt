@@ -40,6 +40,8 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.IconButton
 import com.example.data.local.entity.CourseSettingEntity
 import androidx.work.WorkManager
+import com.example.ui.components.SettingsRow
+import com.example.ui.components.SettingsRowDivider
 import com.example.ui.screens.portal.PortalWebViewHolder
 import com.example.util.CourseItemReminderScheduler
 import com.example.util.ScheduledReminderInfo
@@ -49,23 +51,19 @@ import com.example.util.UniTrackLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Class
-import androidx.compose.material.icons.outlined.DeleteForever
-import androidx.compose.material.icons.outlined.ImportExport
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.LockReset
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.outlined.Sync
-import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
@@ -106,25 +104,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.UniTrackApplication
+import com.example.data.auth.CredentialStore
 import com.example.data.local.preferences.UserPreferences
 import com.example.data.local.preferences.UserPreferencesRepository
-import com.example.data.sync.PortalSyncWorker
 import com.example.ui.components.AppBackground
 import com.example.ui.components.GlassCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.theme.UniTrackTheme
 import com.example.util.DateTimeUtils
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
     onNavigateBack: (() -> Unit)? = null,
     onNavigateToPortal: () -> Unit = {},
     onNavigateToNotices: () -> Unit = {},
-    onNavigateToCapture: () -> Unit = {},
-    onNavigateToDebug: () -> Unit = {},
-    onNavigateToDebugLogs: () -> Unit = {},
-    onNavigateToDesignSystem: () -> Unit = {},
+    onNavigateToCourseMaterials: () -> Unit = {},
+    onNavigateToDownloads: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -139,9 +138,6 @@ fun SettingsScreen(
         initial = UserPreferences()
     )
 
-    var tapCount by remember { mutableIntStateOf(0) }
-    var showClearDataDialog by remember { mutableStateOf(false) }
-    var alsoLogout by remember { mutableStateOf(true) }
     var showAppearanceDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showThresholdDialog by remember { mutableStateOf(false) }
@@ -150,6 +146,11 @@ fun SettingsScreen(
     var showClassesDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showHealthCheckDialog by remember { mutableStateOf(false) }
+    var showForgetLoginDialog by remember { mutableStateOf(false) }
+
+    val credentialStore = remember { CredentialStore(context) }
+    var hasCreds by remember { mutableStateOf(credentialStore.hasCredentials()) }
+
     var upcomingReminders by remember { mutableStateOf<List<ScheduledReminderInfo>>(emptyList()) }
 
     LaunchedEffect(showHealthCheckDialog) {
@@ -158,7 +159,9 @@ fun SettingsScreen(
         }
     }
 
-
+    LaunchedEffect(userPrefs.isSessionActive) {
+        hasCreds = credentialStore.hasCredentials()
+    }
 
     // One-Time Permission Prompt after first login
     if (userPrefs.isSessionActive && !userPrefs.hasSeenPermissionPrompt) {
@@ -199,6 +202,36 @@ fun SettingsScreen(
         )
     }
 
+    // Forget Saved Login Confirmation Dialog
+    if (showForgetLoginDialog) {
+        AlertDialog(
+            onDismissRequest = { showForgetLoginDialog = false },
+            containerColor = colors.surfaceSheet,
+            title = { Text(stringResource(R.string.settings_forget_login), style = typography.sectionTitle, color = colors.textPrimary) },
+            text = { Text(stringResource(R.string.settings_forget_login_confirm), style = typography.body, color = colors.textSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        credentialStore.clear()
+                        CookieManager.getInstance().removeAllCookies(null)
+                        scope.launch { prefsRepo.updateSessionActive(false) }
+                        hasCreds = false
+                        Toast.makeText(context, "Saved login forgotten & session ended", Toast.LENGTH_SHORT).show()
+                        showForgetLoginDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.statusDanger, contentColor = colors.textPrimary)
+                ) {
+                    Text("Forget")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showForgetLoginDialog = false }) {
+                    Text("Cancel", color = colors.textSecondary)
+                }
+            }
+        )
+    }
+
     // Health Check Dialog
     if (showHealthCheckDialog) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -229,7 +262,6 @@ fun SettingsScreen(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Item 1: Post Notifications
                     HealthCheckItemRow(
                         title = "Notification Permission",
                         isOk = hasPostNotif,
@@ -242,7 +274,6 @@ fun SettingsScreen(
                         }
                     )
 
-                    // Item 2: Class Channel Importance
                     HealthCheckItemRow(
                         title = "Channel Importance (High)",
                         isOk = channelImportanceOk,
@@ -253,12 +284,11 @@ fun SettingsScreen(
                                     putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                                     putExtra(Settings.EXTRA_CHANNEL_ID, UniTrackAlarmReceiver.CHANNEL_ID)
                                 }
-                                try { context.startActivity(intent) } catch (e: Exception) {}
+                                try { context.startActivity(intent) } catch (_: Exception) {}
                             }
                         }
                     )
 
-                    // Item 3: Exact Alarm Permission
                     HealthCheckItemRow(
                         title = "Exact Alarm Permission",
                         isOk = hasExactAlarm,
@@ -268,12 +298,11 @@ fun SettingsScreen(
                                 val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
                                     data = Uri.fromParts("package", context.packageName, null)
                                 }
-                                try { context.startActivity(intent) } catch (e: Exception) {}
+                                try { context.startActivity(intent) } catch (_: Exception) {}
                             }
                         }
                     )
 
-                    // Item 4: Battery Optimization Exemption
                     HealthCheckItemRow(
                         title = "Unrestricted Battery",
                         isOk = isIgnoringBattery,
@@ -283,12 +312,11 @@ fun SettingsScreen(
                                 val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                                     data = Uri.fromParts("package", context.packageName, null)
                                 }
-                                try { context.startActivity(intent) } catch (e: Exception) {}
+                                try { context.startActivity(intent) } catch (_: Exception) {}
                             }
                         }
                     )
 
-                    // OEM Background Limits Guide Card
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("OEM Background Limits (Xiaomi, Oppo, Vivo, Samsung)", style = typography.body, fontWeight = FontWeight.Bold, color = colors.sand, fontSize = 12.sp)
@@ -311,7 +339,6 @@ fun SettingsScreen(
                         }
                     }
 
-                    // Test Buttons
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = {
@@ -338,7 +365,6 @@ fun SettingsScreen(
                         }
                     }
 
-                    // Upcoming 5 Scheduled Reminders
                     if (upcomingReminders.isNotEmpty()) {
                         Text("Next Scheduled Reminders (${upcomingReminders.size})", style = typography.body, fontWeight = FontWeight.Bold, color = colors.textPrimary, fontSize = 12.sp)
                         upcomingReminders.forEach { rem ->
@@ -368,146 +394,22 @@ fun SettingsScreen(
         )
     }
 
-    val routinesFlow = remember { app.database.routineDao().getAllRoutines() }
-    val routines by routinesFlow.collectAsState(initial = emptyList())
-    val allSettingsFlow = remember { app.database.courseSettingDao().getAllSettings() }
-    val allSettings by allSettingsFlow.collectAsState(initial = emptyList())
-    val allCourseItemsFlow = remember { app.database.courseItemDao().getAllItems() }
-    val allCourseItems by allCourseItemsFlow.collectAsState(initial = emptyList())
-
-    // Clear Data Dialog
-    if (showClearDataDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDataDialog = false },
-            containerColor = colors.surfaceSheet,
-            icon = { Icon(Icons.Outlined.Warning, contentDescription = null, tint = colors.statusDanger) },
-            title = {
-                Text(
-                    text = stringResource(R.string.settings_clear_data),
-                    style = typography.sectionTitle,
-                    color = colors.textPrimary
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "This will permanently delete:\n• Routine, attendance & result cache\n• Quizzes, assignments, exams & tasks\n• Per-course settings & dropped classes\n• Saved HTML snapshots & debug logs\n• Preferences & local settings",
-                        style = typography.body,
-                        color = colors.textSecondary
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { alsoLogout = !alsoLogout }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Checkbox(
-                            checked = alsoLogout,
-                            onCheckedChange = { alsoLogout = it },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = colors.accentCyan,
-                                uncheckedColor = colors.textSecondary
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Also log out of the portal",
-                            style = typography.body,
-                            color = colors.textPrimary,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch(Dispatchers.IO) {
-                            // 1. Cancel scheduled reminder alarms, WorkManager jobs & posted notifications
-                            CourseItemReminderScheduler.cancelAllReminders(context)
-                            WorkManager.getInstance(context).cancelAllWork()
-                            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                            notificationManager.cancelAll()
-
-                            // 2. Clear all DB tables then checkpoint/VACUUM
-                            app.database.clearAllTables()
-                            try {
-                                app.database.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL);")
-                                app.database.openHelper.writableDatabase.execSQL("VACUUM;")
-                            } catch (e: Exception) {
-                                UniTrackLogger.w("VACUUM error: ${e.message}")
-                            }
-
-                            // 3. Clear DataStore & cache files & debug logs
-                            prefsRepo.clearSettings()
-                            try {
-                                context.cacheDir.deleteRecursively()
-                            } catch (e: Exception) {
-                                UniTrackLogger.w("Cache dir error: ${e.message}")
-                            }
-                            UniTrackLogger.clear()
-
-                            // 4. If checkbox is on: clear cookies & web storage
-                            if (alsoLogout) {
-                                withContext(Dispatchers.Main) {
-                                    val cookieManager = CookieManager.getInstance()
-                                    cookieManager.removeAllCookies {
-                                        cookieManager.flush()
-                                    }
-                                    WebStorage.getInstance().deleteAllData()
-                                    val webView = PortalWebViewHolder.getWebView()
-                                    webView?.clearCache(true)
-                                    webView?.clearHistory()
-                                    webView?.clearFormData()
-                                }
-                                prefsRepo.updateSessionActive(false)
-                            }
-
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(context, "All local data deleted", Toast.LENGTH_SHORT).show()
-                                showClearDataDialog = false
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.statusDanger,
-                        contentColor = colors.textPrimary
-                    )
-                ) {
-                    Text("Clear Everything")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDataDialog = false }) {
-                    Text("Cancel", color = colors.textSecondary)
-                }
-            }
-        )
-    }
-
-    // Appearance Choice Dialog
+    // Dialogs for Appearance, Language, Threshold, Portal URL, Reminder Minutes, Classes, About
     if (showAppearanceDialog) {
         AlertDialog(
             onDismissRequest = { showAppearanceDialog = false },
-            containerColor = colors.surfaceSheet,
-            title = { Text("Appearance", style = typography.sectionTitle, color = colors.textPrimary) },
+            title = { Text(stringResource(R.string.settings_theme), style = typography.sectionTitle) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        "SYSTEM" to "System default",
-                        "DARK" to "Dark theme",
-                        "LIGHT" to "Light theme"
-                    ).forEach { (mode, label) ->
+                    listOf("SYSTEM" to "System default", "LIGHT" to "Light", "DARK" to "Dark").forEach { (mode, label) ->
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
                                     scope.launch { prefsRepo.updateThemeMode(mode) }
                                     showAppearanceDialog = false
-                                }
-                                .padding(vertical = 8.dp)
+                                },
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = userPrefs.themeMode == mode,
@@ -515,47 +417,37 @@ fun SettingsScreen(
                                     scope.launch { prefsRepo.updateThemeMode(mode) }
                                     showAppearanceDialog = false
                                 },
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = colors.accentCyan,
-                                    unselectedColor = colors.textSecondary
-                                )
+                                colors = RadioButtonDefaults.colors(selectedColor = colors.accentCyan)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = label, style = typography.body, color = colors.textPrimary)
+                            Text(label, style = typography.body, color = colors.textPrimary)
                         }
                     }
                 }
             },
-            confirmButton = {},
-            dismissButton = {
+            confirmButton = {
                 TextButton(onClick = { showAppearanceDialog = false }) {
-                    Text("Close", color = colors.textSecondary)
+                    Text("Close", color = colors.accentCyan)
                 }
             }
         )
     }
 
-    // Language Choice Dialog
     if (showLanguageDialog) {
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
-            containerColor = colors.surfaceSheet,
-            title = { Text("Language", style = typography.sectionTitle, color = colors.textPrimary) },
+            title = { Text(stringResource(R.string.settings_language), style = typography.sectionTitle) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        "en" to "English",
-                        "bn" to "বাংলা (Bangla)"
-                    ).forEach { (lang, label) ->
+                    listOf("en" to "English", "bn" to "বাংলা (Bangla)").forEach { (lang, label) ->
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
                                     scope.launch { prefsRepo.updateLanguage(lang) }
                                     showLanguageDialog = false
-                                }
-                                .padding(vertical = 8.dp)
+                                },
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = userPrefs.language == lang,
@@ -563,56 +455,36 @@ fun SettingsScreen(
                                     scope.launch { prefsRepo.updateLanguage(lang) }
                                     showLanguageDialog = false
                                 },
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = colors.accentCyan,
-                                    unselectedColor = colors.textSecondary
-                                )
+                                colors = RadioButtonDefaults.colors(selectedColor = colors.accentCyan)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = label, style = typography.body, color = colors.textPrimary)
+                            Text(label, style = typography.body, color = colors.textPrimary)
                         }
                     }
                 }
             },
-            confirmButton = {},
-            dismissButton = {
+            confirmButton = {
                 TextButton(onClick = { showLanguageDialog = false }) {
-                    Text("Close", color = colors.textSecondary)
+                    Text("Close", color = colors.accentCyan)
                 }
             }
         )
     }
 
-    // Attendance Threshold Dialog
     if (showThresholdDialog) {
-        var sliderVal by remember(userPrefs.attendanceThreshold) {
-            mutableFloatStateOf(userPrefs.attendanceThreshold.toFloat())
-        }
+        var sliderVal by remember { mutableFloatStateOf(userPrefs.attendanceThreshold.toFloat()) }
         AlertDialog(
             onDismissRequest = { showThresholdDialog = false },
-            containerColor = colors.surfaceSheet,
-            title = { Text("Attendance Warning Threshold", style = typography.sectionTitle, color = colors.textPrimary) },
+            title = { Text(stringResource(R.string.settings_attendance_threshold), style = typography.sectionTitle) },
             text = {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Minimum Required", style = typography.body, color = colors.textSecondary)
-                        Text("${sliderVal.toInt()}%", style = typography.sectionTitle, color = colors.accentCyan, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Warning threshold: ${sliderVal.toInt()}%", style = typography.body, color = colors.textPrimary)
                     Slider(
                         value = sliderVal,
                         onValueChange = { sliderVal = it },
-                        valueRange = 60f..95f,
-                        steps = 6,
-                        colors = SliderDefaults.colors(
-                            thumbColor = colors.accentCyan,
-                            activeTrackColor = colors.accentCyan,
-                            inactiveTrackColor = colors.surfaceField
-                        )
+                        valueRange = 50f..100f,
+                        steps = 9,
+                        colors = SliderDefaults.colors(thumbColor = colors.accentCyan, activeTrackColor = colors.accentCyan)
                     )
                 }
             },
@@ -635,41 +507,25 @@ fun SettingsScreen(
         )
     }
 
-    // Portal URL Dialog
     if (showPortalUrlDialog) {
-        var urlInput by remember(userPrefs.portalUrl) { mutableStateOf(userPrefs.portalUrl) }
+        var urlInput by remember { mutableStateOf(userPrefs.portalUrl) }
         AlertDialog(
             onDismissRequest = { showPortalUrlDialog = false },
-            containerColor = colors.surfaceSheet,
-            title = { Text("Portal Base URL", style = typography.sectionTitle, color = colors.textPrimary) },
+            title = { Text(stringResource(R.string.settings_portal_url), style = typography.sectionTitle) },
             text = {
-                Column {
-                    Text("UniTrack restricts browsing strictly to this portal domain.", style = typography.meta, color = colors.textSecondary)
-                    Spacer(modifier = Modifier.height(12.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = urlInput,
                         onValueChange = { urlInput = it },
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = colors.surfaceField,
-                            unfocusedContainerColor = colors.surfaceField,
-                            focusedBorderColor = colors.accentCyan,
-                            unfocusedBorderColor = colors.cardBorder,
-                            focusedTextColor = colors.textPrimary,
-                            unfocusedTextColor = colors.textPrimary,
-                            cursorColor = colors.accentCyan
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.accentCyan)
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        scope.launch {
-                            prefsRepo.updatePortalUrl(urlInput.trim())
-                            Toast.makeText(context, "Portal URL updated", Toast.LENGTH_SHORT).show()
-                        }
+                        scope.launch { prefsRepo.updatePortalUrl(urlInput) }
                         showPortalUrlDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = colors.accentCyan, contentColor = colors.background)
@@ -678,130 +534,156 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        urlInput = UserPreferencesRepository.DEFAULT_PORTAL_URL
-                        scope.launch { prefsRepo.updatePortalUrl(urlInput) }
-                        showPortalUrlDialog = false
-                    }
-                ) {
-                    Text("Reset Default", color = colors.textSecondary)
-                }
-            }
-        )
-    }
-
-    // Class Reminder Offset Dialog
-    if (showReminderMinutesDialog) {
-        AlertDialog(
-            onDismissRequest = { showReminderMinutesDialog = false },
-            containerColor = colors.surfaceSheet,
-            title = { Text("Class Reminder Lead Time", style = typography.sectionTitle, color = colors.textPrimary) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(5, 10, 15, 30, 60).forEach { mins ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    scope.launch { prefsRepo.updateReminderMinutes(mins) }
-                                    showReminderMinutesDialog = false
-                                }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            RadioButton(
-                                selected = userPrefs.reminderMinutes == mins,
-                                onClick = {
-                                    scope.launch { prefsRepo.updateReminderMinutes(mins) }
-                                    showReminderMinutesDialog = false
-                                },
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = colors.accentCyan,
-                                    unselectedColor = colors.textSecondary
-                                )
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("$mins minutes before class", style = typography.body, color = colors.textPrimary)
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showReminderMinutesDialog = false }) {
+                TextButton(onClick = { showPortalUrlDialog = false }) {
                     Text("Cancel", color = colors.textSecondary)
                 }
             }
         )
     }
 
+    if (showReminderMinutesDialog) {
+        AlertDialog(
+            onDismissRequest = { showReminderMinutesDialog = false },
+            title = { Text("Class reminder lead time", style = typography.sectionTitle) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(10 to "10 minutes before", 15 to "15 minutes before", 30 to "30 minutes before", 60 to "1 hour before").forEach { (mins, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    scope.launch {
+                                        prefsRepo.updateReminderMinutes(mins)
+                                        UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(context)
+                                    }
+                                    showReminderMinutesDialog = false
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = userPrefs.reminderMinutes == mins,
+                                onClick = {
+                                    scope.launch {
+                                        prefsRepo.updateReminderMinutes(mins)
+                                        UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(context)
+                                    }
+                                    showReminderMinutesDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = colors.accentCyan)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label, style = typography.body, color = colors.textPrimary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReminderMinutesDialog = false }) {
+                    Text("Close", color = colors.accentCyan)
+                }
+            }
+        )
+    }
+
+    val routinesFlow = remember { app.database.routineDao().getAllRoutines() }
+    val routines by routinesFlow.collectAsState(initial = emptyList())
+    val allSettingsFlow = remember { app.database.courseSettingDao().getAllSettings() }
+    val allSettings by allSettingsFlow.collectAsState(initial = emptyList())
+    val allCourseItemsFlow = remember { app.database.courseItemDao().getAllItems() }
+    val allCourseItems by allCourseItemsFlow.collectAsState(initial = emptyList())
+
     // My Classes Dialog
     if (showClassesDialog) {
-        val activeKeys = routines.map { CourseSettingEntity.makeKey(it.courseName, it.section) }.toSet()
-        val settingKeys = allSettings.map { it.courseKey }
-        val itemKeys = allCourseItems.map { it.courseKey }
-        val orphanedKeys = (settingKeys + itemKeys).filter { it.isNotBlank() && !activeKeys.contains(it) }.distinct()
+        val courseKeysMap = routines.map { CourseSettingEntity.makeKey(it.courseName, it.section) }.toSet()
+        val settingsMap = allSettings.associateBy { it.courseKey }
 
         AlertDialog(
             onDismissRequest = { showClassesDialog = false },
             containerColor = colors.surfaceSheet,
             title = { Text("My Classes & Reminders", style = typography.sectionTitle, color = colors.textPrimary) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (routines.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (courseKeysMap.isEmpty()) {
                         Text("No active class routines found in local database. Log in to AIUB Student Portal to load your schedule.", style = typography.body, color = colors.textSecondary)
                     } else {
-                        val distinctCourses = routines.distinctBy { "${it.courseName}_${it.section}" }
-                        distinctCourses.forEach { classItem ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(colors.surfaceField)
-                                    .padding(10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(classItem.courseName, style = typography.body, color = colors.textPrimary, fontWeight = FontWeight.Bold)
-                                    Text("Sec: ${classItem.section} • Room: ${classItem.room}", style = typography.meta, color = colors.textSecondary)
-                                }
-                                Icon(Icons.Outlined.CheckCircle, contentDescription = "Active", tint = colors.statusSuccess, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
+                        courseKeysMap.forEach { key ->
+                            val setting = settingsMap[key]
+                            val sampleRoutine = routines.firstOrNull { CourseSettingEntity.makeKey(it.courseName, it.section) == key }
+                            val cName = sampleRoutine?.courseName ?: key
+                            val cSec = sampleRoutine?.section ?: ""
+                            val isDropped = setting?.isDropped == true
+                            val notifEnabled = setting?.notificationsEnabled != false
 
-                    if (orphanedKeys.isNotEmpty()) {
-                        Text("No longer in routine", style = typography.sectionTitle, color = colors.sand, fontSize = 13.sp)
-                        orphanedKeys.forEach { orphanedKey ->
-                            val cName = allSettings.find { it.courseKey == orphanedKey }?.courseName
-                                ?: allCourseItems.find { it.courseKey == orphanedKey }?.courseName
-                                ?: orphanedKey
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(colors.surfaceField)
                                     .padding(10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(cName, style = typography.body, color = colors.textPrimary, fontWeight = FontWeight.SemiBold)
-                                    Text("User items retained", style = typography.meta, color = colors.textSecondary)
-                                }
-                                IconButton(
-                                    onClick = {
-                                        scope.launch {
-                                            allCourseItems.filter { it.courseKey == orphanedKey }.forEach {
-                                                app.database.courseItemDao().deleteItem(it)
-                                            }
-                                            Toast.makeText(context, "Removed course data for $cName", Toast.LENGTH_SHORT).show()
+                                Text("$cName [$cSec]", style = typography.body, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = notifEnabled,
+                                            onCheckedChange = { checked ->
+                                                scope.launch {
+                                                    val existing = app.database.courseSettingDao().getSettingDirect(key)
+                                                    if (existing != null) {
+                                                        app.database.courseSettingDao().insertOrUpdate(existing.copy(notificationsEnabled = checked, updatedAt = System.currentTimeMillis()))
+                                                    } else {
+                                                        app.database.courseSettingDao().insertOrUpdate(CourseSettingEntity(courseKey = key, courseName = cName, section = cSec, notificationsEnabled = checked, updatedAt = System.currentTimeMillis()))
+                                                    }
+                                                    UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(context)
+                                                }
+                                            },
+                                            colors = CheckboxDefaults.colors(checkedColor = colors.accentCyan)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Reminders", style = typography.meta, color = colors.textSecondary)
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(if (isDropped) "Dropped" else "Active", style = typography.meta, color = if (isDropped) colors.statusDanger else colors.statusSuccess)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    val itemsForCourse = allCourseItems.filter { it.courseKey == key }
+                                                    itemsForCourse.forEach { item ->
+                                                        app.database.courseItemDao().deleteItem(item)
+                                                    }
+                                                    val existing = app.database.courseSettingDao().getSettingDirect(key)
+                                                    if (existing != null) {
+                                                        app.database.courseSettingDao().insertOrUpdate(existing.copy(isDropped = !isDropped, updatedAt = System.currentTimeMillis()))
+                                                    } else {
+                                                        app.database.courseSettingDao().insertOrUpdate(CourseSettingEntity(courseKey = key, courseName = cName, section = cSec, isDropped = true, updatedAt = System.currentTimeMillis()))
+                                                    }
+                                                    UniTrackAlarmScheduler.scheduleAllRemindersForNext14Days(context)
+                                                    Toast.makeText(context, "Updated course status", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Warning,
+                                                contentDescription = "Drop/Restore",
+                                                tint = if (isDropped) colors.statusSuccess else colors.statusDanger,
+                                                modifier = Modifier.size(18.dp)
+                                            )
                                         }
                                     }
-                                ) {
-                                    Icon(Icons.Outlined.DeleteForever, contentDescription = "Delete course data", tint = colors.statusDanger, modifier = Modifier.size(20.dp))
                                 }
                             }
                         }
@@ -823,25 +705,17 @@ fun SettingsScreen(
     if (showAboutDialog) {
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
-            containerColor = colors.surfaceSheet,
-            icon = { Icon(Icons.Outlined.School, contentDescription = null, tint = colors.accentCyan) },
             title = { Text("About UniTrack", style = typography.sectionTitle, color = colors.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("UniTrack v1.0.0", style = typography.body, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                    Text(
-                        "An offline-first academic assistant designed specifically for AIUB students. Automatically parses your portal routine and attendance, schedules local notifications, and operates fully offline.",
-                        style = typography.body,
-                        color = colors.textSecondary
-                    )
+                    Text("Offline-first academic assistant for American International University-Bangladesh (AIUB).", style = typography.body, color = colors.textSecondary)
+                    Text("Features secure student portal login, OCR captcha solver, automated class routines, attendance tracking, offline course materials and task reminders.", style = typography.meta, color = colors.textSecondary)
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = { showAboutDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.accentCyan, contentColor = colors.background)
-                ) {
-                    Text("Close")
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text("Close", color = colors.accentCyan)
                 }
             }
         )
@@ -853,26 +727,42 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars)
         ) {
-            // Screen Header: Title only, no clock pill, no bell, no theme toggle
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = dimens.ScreenPadding, vertical = dimens.Space12)
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_title),
-                    style = typography.screenTitle,
-                    color = colors.textPrimary
-                )
+            // Sub-screen header if navigation back is available
+            if (onNavigateBack != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = dimens.ScreenPadding, vertical = dimens.Space12),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.size(48.dp).testTag("settings_back_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = colors.textPrimary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(dimens.Space8))
+                    Text(
+                        text = "Settings & Tools",
+                        style = typography.screenTitle,
+                        color = colors.textPrimary
+                    )
+                }
             }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
                 contentPadding = PaddingValues(
                     horizontal = dimens.ScreenPadding,
-                    vertical = dimens.Space8
+                    vertical = dimens.Space16
                 ),
-                verticalArrangement = Arrangement.spacedBy(dimens.Space16)
+                verticalArrangement = Arrangement.spacedBy(dimens.Space24)
             ) {
                 // ACCOUNT SECTION
                 item {
@@ -881,37 +771,46 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         contentPadding = 0.dp
                     ) {
-                        SettingsRow(
-                            title = "AIUB Student Portal",
-                            subtitle = "Log in and refresh your routine",
-                            icon = Icons.Outlined.School,
-                            iconTint = colors.accentCyan,
-                            trailingContent = {
-                                val (statusText, statusColor) = if (userPrefs.isSessionActive) {
-                                    "Active session" to colors.statusSuccess
-                                } else {
-                                    "Not logged in" to colors.textSecondary
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = statusText,
-                                        style = typography.meta,
-                                        color = statusColor,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                        Column {
+                            SettingsRow(
+                                title = "AIUB Student Portal",
+                                subtitle = if (userPrefs.isSessionActive) "Active session" else "Not logged in",
+                                icon = Icons.Outlined.Link,
+                                iconTint = colors.accentCyan,
+                                trailingContent = {
                                     Icon(
                                         imageVector = Icons.Outlined.ChevronRight,
                                         contentDescription = null,
                                         tint = colors.textSecondary,
                                         modifier = Modifier.size(16.dp)
                                     )
-                                }
-                            },
-                            onClick = onNavigateToPortal,
-                            testTag = "settings_account_row"
-                        )
+                                },
+                                onClick = onNavigateToPortal,
+                                testTag = "settings_account_row"
+                            )
+
+                            if (hasCreds) {
+                                SettingsRowDivider()
+
+                                SettingsRow(
+                                    title = stringResource(R.string.settings_forget_login),
+                                    subtitle = stringResource(R.string.settings_forget_login_subtitle),
+                                    icon = Icons.Outlined.LockReset,
+                                    iconTint = colors.statusDanger,
+                                    titleColor = colors.statusDanger,
+                                    trailingContent = {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ChevronRight,
+                                            contentDescription = null,
+                                            tint = colors.statusDanger,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    onClick = { showForgetLoginDialog = true },
+                                    testTag = "settings_forget_login_row"
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -926,8 +825,8 @@ fun SettingsScreen(
                             SettingsRow(
                                 title = "My classes",
                                 subtitle = "Reminders per class, drop/restore",
-                                icon = Icons.Outlined.Class,
-                                iconTint = colors.sand,
+                                icon = Icons.Outlined.School,
+                                iconTint = colors.accentCyan,
                                 trailingContent = {
                                     Icon(
                                         imageVector = Icons.Outlined.ChevronRight,
@@ -957,6 +856,53 @@ fun SettingsScreen(
                                 },
                                 onClick = onNavigateToNotices,
                                 testTag = "settings_notices_row"
+                            )
+                        }
+                    }
+                }
+
+                // DOWNLOADS SECTION (Task 3.6)
+                item {
+                    SectionHeader(title = stringResource(R.string.settings_downloads_section))
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = 0.dp
+                    ) {
+                        Column {
+                            SettingsRow(
+                                title = stringResource(R.string.settings_course_materials),
+                                subtitle = stringResource(R.string.settings_course_materials_subtitle),
+                                icon = Icons.Outlined.Folder,
+                                iconTint = colors.accentCyan,
+                                trailingContent = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ChevronRight,
+                                        contentDescription = null,
+                                        tint = colors.textSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                onClick = onNavigateToCourseMaterials,
+                                testTag = "settings_course_materials_row"
+                            )
+
+                            SettingsRowDivider()
+
+                            SettingsRow(
+                                title = stringResource(R.string.settings_my_downloads),
+                                subtitle = stringResource(R.string.settings_my_downloads_subtitle),
+                                icon = Icons.Outlined.FolderOpen,
+                                iconTint = colors.sand,
+                                trailingContent = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ChevronRight,
+                                        contentDescription = null,
+                                        tint = colors.textSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                onClick = onNavigateToDownloads,
+                                testTag = "settings_my_downloads_row"
                             )
                         }
                     }
@@ -1044,16 +990,15 @@ fun SettingsScreen(
                         contentPadding = 0.dp
                     ) {
                         Column {
-                            val themeLabel = when (userPrefs.themeMode) {
-                                "DARK" -> "Dark"
-                                "LIGHT" -> "Light"
-                                else -> "System"
-                            }
                             SettingsRow(
-                                title = "Appearance",
-                                subtitle = themeLabel,
+                                title = "Theme",
+                                subtitle = when (userPrefs.themeMode) {
+                                    "LIGHT" -> "Light"
+                                    "DARK" -> "Dark"
+                                    else -> "System default"
+                                },
                                 icon = Icons.Outlined.Palette,
-                                iconTint = colors.accentCyan,
+                                iconTint = colors.sand,
                                 trailingContent = {
                                     Icon(
                                         imageVector = Icons.Outlined.ChevronRight,
@@ -1063,17 +1008,16 @@ fun SettingsScreen(
                                     )
                                 },
                                 onClick = { showAppearanceDialog = true },
-                                testTag = "settings_appearance_row"
+                                testTag = "settings_theme_row"
                             )
 
                             SettingsRowDivider()
 
-                            val langLabel = if (userPrefs.language == "bn") "বাংলা (Bangla)" else "English"
                             SettingsRow(
                                 title = "Language",
-                                subtitle = langLabel,
+                                subtitle = if (userPrefs.language == "bn") "বাংলা (Bangla)" else "English",
                                 icon = Icons.Outlined.Language,
-                                iconTint = colors.sand,
+                                iconTint = colors.accentCyan,
                                 trailingContent = {
                                     Icon(
                                         imageVector = Icons.Outlined.ChevronRight,
@@ -1090,7 +1034,7 @@ fun SettingsScreen(
 
                             SettingsRow(
                                 title = "Attendance warning threshold",
-                                subtitle = "${userPrefs.attendanceThreshold}%",
+                                subtitle = "Warn when attendance drops below ${userPrefs.attendanceThreshold}%",
                                 icon = Icons.Outlined.Warning,
                                 iconTint = colors.warning,
                                 trailingContent = {
@@ -1127,80 +1071,7 @@ fun SettingsScreen(
                     }
                 }
 
-                // DATA SECTION
-                item {
-                    SectionHeader(title = "DATA")
-                    GlassCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = 0.dp
-                    ) {
-                        Column {
-                            val lastSyncText = DateTimeUtils.formatLastSynced(userPrefs.lastSyncTimestamp)
-                            SettingsRow(
-                                title = "Sync now",
-                                subtitle = lastSyncText,
-                                icon = Icons.Outlined.Sync,
-                                iconTint = colors.accentCyan,
-                                trailingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ChevronRight,
-                                        contentDescription = null,
-                                        tint = colors.textSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                onClick = {
-                                    PortalSyncWorker.triggerManualSync(context)
-                                    Toast.makeText(context, "Offline sync started", Toast.LENGTH_SHORT).show()
-                                },
-                                testTag = "settings_sync_now_row"
-                            )
-
-                            SettingsRowDivider()
-
-                            SettingsRow(
-                                title = "Export / import backup",
-                                subtitle = "Backup or restore local data",
-                                icon = Icons.Outlined.ImportExport,
-                                iconTint = colors.sand,
-                                trailingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ChevronRight,
-                                        contentDescription = null,
-                                        tint = colors.textSecondary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                onClick = {
-                                    Toast.makeText(context, "Local data is safely backed up on-device", Toast.LENGTH_SHORT).show()
-                                },
-                                testTag = "settings_backup_row"
-                            )
-
-                            SettingsRowDivider()
-
-                            SettingsRow(
-                                title = "Clear local data",
-                                subtitle = "Delete cached routine, attendance & pages",
-                                icon = Icons.Outlined.DeleteForever,
-                                iconTint = colors.statusDanger,
-                                titleColor = colors.statusDanger,
-                                trailingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.ChevronRight,
-                                        contentDescription = null,
-                                        tint = colors.statusDanger,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                onClick = { showClearDataDialog = true },
-                                testTag = "settings_clear_data_row"
-                            )
-                        }
-                    }
-                }
-
-                // ABOUT SECTION
+                // ABOUT SECTION (Task 4: plain info row without 7-tap)
                 item {
                     SectionHeader(title = "ABOUT")
                     GlassCard(
@@ -1210,26 +1081,9 @@ fun SettingsScreen(
                         Column {
                             SettingsRow(
                                 title = "Version 1.0.0",
-                                subtitle = if (userPrefs.isDeveloperModeEnabled) "Developer tools enabled" else "Tap 7 times to enable developer tools",
+                                subtitle = "UniTrack",
                                 icon = Icons.Outlined.Info,
                                 iconTint = colors.accentCyan,
-                                onClick = {
-                                    if (userPrefs.isDeveloperModeEnabled) {
-                                        Toast.makeText(context, "Developer tools already enabled", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        tapCount++
-                                        if (tapCount in 3..6) {
-                                            val remaining = 7 - tapCount
-                                            Toast.makeText(context, "$remaining more taps to enable developer tools", Toast.LENGTH_SHORT).show()
-                                        } else if (tapCount >= 7) {
-                                            tapCount = 0
-                                            scope.launch {
-                                                prefsRepo.updateDeveloperModeEnabled(true)
-                                                Toast.makeText(context, "Developer tools enabled", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                },
                                 testTag = "settings_version_row"
                             )
 
@@ -1255,209 +1109,12 @@ fun SettingsScreen(
                     }
                 }
 
-                // HIDDEN DEVELOPER SECTION (only visible when unlocked)
-                if (userPrefs.isDeveloperModeEnabled) {
-                    item {
-                        SectionHeader(title = "DEVELOPER")
-                        GlassCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = 0.dp
-                        ) {
-                            Column {
-                                SettingsRow(
-                                    title = "Page Capture & HTML Samples",
-                                    subtitle = "Saved page snapshots for inspecting portal structure",
-                                    icon = Icons.Outlined.CameraAlt,
-                                    iconTint = colors.sand,
-                                    trailingContent = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.ChevronRight,
-                                            contentDescription = null,
-                                            tint = colors.textSecondary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    onClick = onNavigateToCapture,
-                                    testTag = "settings_dev_capture_row"
-                                )
-
-                                SettingsRowDivider()
-
-                                SettingsRow(
-                                    title = "Parser Debugger",
-                                    subtitle = "Test CSS selectors against live captured HTML",
-                                    icon = Icons.Outlined.BugReport,
-                                    iconTint = colors.accentCyan,
-                                    trailingContent = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.ChevronRight,
-                                            contentDescription = null,
-                                            tint = colors.textSecondary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    onClick = onNavigateToDebug,
-                                    testTag = "settings_dev_parser_row"
-                                )
-
-                                SettingsRowDivider()
-
-                                SettingsRow(
-                                    title = "UniTrack Debug Log",
-                                    subtitle = "Live capture, JS extraction & background sync logs",
-                                    icon = Icons.Outlined.Terminal,
-                                    iconTint = colors.statusDanger,
-                                    trailingContent = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.ChevronRight,
-                                            contentDescription = null,
-                                            tint = colors.textSecondary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    onClick = onNavigateToDebugLogs,
-                                    testTag = "settings_dev_log_row"
-                                )
-
-                                SettingsRowDivider()
-
-                                SettingsRow(
-                                    title = "Design System Preview",
-                                    subtitle = "Inspect glassmorphic tokens, cards, pills & buttons",
-                                    icon = Icons.Outlined.Palette,
-                                    iconTint = colors.accentCyan,
-                                    trailingContent = {
-                                        Icon(
-                                            imageVector = Icons.Outlined.ChevronRight,
-                                            contentDescription = null,
-                                            tint = colors.textSecondary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    onClick = onNavigateToDesignSystem,
-                                    testTag = "settings_dev_design_system_row"
-                                )
-
-                                SettingsRowDivider()
-
-                                SettingsRow(
-                                    title = "Hide developer tools",
-                                    subtitle = "Turn off developer options section",
-                                    icon = Icons.Outlined.VisibilityOff,
-                                    iconTint = colors.textSecondary,
-                                    titleColor = colors.textSecondary,
-                                    onClick = {
-                                        scope.launch {
-                                            prefsRepo.updateDeveloperModeEnabled(false)
-                                            Toast.makeText(context, "Developer tools hidden", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    testTag = "settings_hide_dev_row"
-                                )
-                            }
-                        }
-                    }
-                }
-
                 item {
                     Spacer(modifier = Modifier.height(32.dp))
                 }
             }
         }
     }
-}
-
-@Composable
-private fun SettingsRow(
-    title: String,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    icon: ImageVector? = null,
-    iconTint: Color = UniTrackTheme.colors.accentCyan,
-    titleColor: Color = UniTrackTheme.colors.textPrimary,
-    trailingContent: (@Composable () -> Unit)? = null,
-    onClick: (() -> Unit)? = null,
-    testTag: String = ""
-) {
-    val colors = UniTrackTheme.colors
-    val typography = UniTrackTheme.typography
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 10.dp)
-            .then(if (testTag.isNotEmpty()) Modifier.testTag(testTag) else Modifier),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
-        ) {
-            if (icon != null) {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(iconTint.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = title,
-                    style = typography.body,
-                    color = titleColor,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (!subtitle.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = subtitle,
-                        style = typography.meta,
-                        color = colors.textSecondary,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-
-        if (trailingContent != null) {
-            Spacer(modifier = Modifier.width(12.dp))
-            trailingContent()
-        }
-    }
-}
-
-@Composable
-private fun SettingsRowDivider() {
-    val colors = UniTrackTheme.colors
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .padding(horizontal = 12.dp)
-            .background(colors.cardBorder.copy(alpha = 0.4f))
-    )
 }
 
 @Composable

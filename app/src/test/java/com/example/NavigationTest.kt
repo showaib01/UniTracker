@@ -8,6 +8,8 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.WorkManager
+import com.example.util.NotificationNav
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -61,6 +63,10 @@ class NavigationTest {
         composeTestRule.onNodeWithTag("settings_account_row").performClick()
         composeTestRule.waitForIdle()
 
+        // Toggle portal toolbar open
+        composeTestRule.onNodeWithTag("portal_toolbar_toggle").performClick()
+        composeTestRule.waitForIdle()
+
         // Tap back button on Portal sub-screen
         composeTestRule.onNodeWithTag("portal_back_button").performClick()
         composeTestRule.waitForIdle()
@@ -70,5 +76,12 @@ class NavigationTest {
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithTag("top_bar_bell_icon").assertIsDisplayed()
+    }
+
+    @Test
+    fun testNotificationNavBuildIntent() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val pendingIntent = NotificationNav.buildContentIntent(context, 123, NotificationNav.TARGET_COURSE, "Algorithms_B", 456L)
+        assertNotNull(pendingIntent)
     }
 }

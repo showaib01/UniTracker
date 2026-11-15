@@ -137,6 +137,15 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(progress = progress, isLoading = progress < 100) }
     }
 
+    private var pendingCredentials: Pair<String, String>? = null
+
+    fun onCredentialsCaptured(studentId: String, password: String) {
+        if (studentId.isNotBlank() && password.isNotBlank()) {
+            pendingCredentials = Pair(studentId, password)
+            UniTrackLogger.d("PortalViewModel: Captured credentials in memory for $studentId")
+        }
+    }
+
     private fun checkSessionStatus(url: String, html: String?) {
         val isLogin = PortalSelectorConfig.isLoginPage(url, html)
         val isLoggedIn = PortalSelectorConfig.isLoggedIn(html)
@@ -146,6 +155,7 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
         val wasActive = _uiState.value.isSessionActive
 
         if (isLogin) {
+            pendingCredentials = null
             if (wasActive) {
                 UniTrackLogger.w("checkSessionStatus: Transitioned to login. Marking session expired.")
                 _uiState.update { it.copy(isSessionActive = false, isSessionExpiredPrompt = true) }
@@ -154,6 +164,13 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
         } else if (isLoggedIn || (url.contains("portal.aiub.edu") && !url.contains("/login", ignoreCase = true))) {
             _uiState.update { it.copy(isSessionActive = true, isSessionExpiredPrompt = false) }
             viewModelScope.launch { preferencesRepository.updateSessionActive(true) }
+
+            pendingCredentials?.let { (id, pass) ->
+                com.example.data.auth.CredentialStore(app).save(id, pass)
+                saveStudentIdPreference(id, true)
+                UniTrackLogger.i("PortalViewModel: Confirmed login! Saved credentials to CredentialStore for $id")
+                pendingCredentials = null
+            }
         }
     }
 

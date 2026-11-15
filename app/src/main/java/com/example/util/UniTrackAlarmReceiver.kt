@@ -9,7 +9,6 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.UniTrackApplication
 import com.example.data.local.entity.CourseItemStatus
-import com.example.util.UniTrackLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -42,7 +41,8 @@ class UniTrackAlarmReceiver : BroadcastReceiver() {
                     context,
                     id = 9991,
                     title = "UniTrack Test Notification",
-                    text = "Alarms and notifications are working properly!"
+                    text = "Alarms and notifications are working properly!",
+                    target = NotificationNav.TARGET_TODAY
                 )
                 UniTrackLogger.i("UniTrack: Posted instant test notification")
             }
@@ -52,7 +52,8 @@ class UniTrackAlarmReceiver : BroadcastReceiver() {
                     context,
                     id = 9992,
                     title = "UniTrack 1-Minute Test",
-                    text = "Exact Alarm fired successfully while app was backgrounded/closed!"
+                    text = "Exact Alarm fired successfully while app was backgrounded/closed!",
+                    target = NotificationNav.TARGET_TODAY
                 )
                 UniTrackLogger.i("UniTrack: Posted 1-minute exact alarm test notification")
             }
@@ -86,7 +87,9 @@ class UniTrackAlarmReceiver : BroadcastReceiver() {
                     context,
                     id = ("CLASS_$courseKey").hashCode(),
                     title = "$courseName [$section]",
-                    text = contentText
+                    text = contentText,
+                    target = NotificationNav.TARGET_COURSE,
+                    courseKey = courseKey
                 )
                 UniTrackLogger.i("UniTrack: Fired class reminder for $courseName at $timeFormatted")
             }
@@ -134,16 +137,29 @@ class UniTrackAlarmReceiver : BroadcastReceiver() {
                     context,
                     id = (itemId * 1000 + offsetMinutes).toInt(),
                     title = title,
-                    text = content
+                    text = content,
+                    target = NotificationNav.TARGET_COURSE,
+                    courseKey = item.courseKey,
+                    itemId = item.id
                 )
                 UniTrackLogger.i("UniTrack: Fired deadline reminder for ${item.title}")
             }
         }
     }
 
-    private fun showNotification(context: Context, id: Int, title: String, text: String) {
+    private fun showNotification(
+        context: Context,
+        id: Int,
+        title: String,
+        text: String,
+        target: String = NotificationNav.TARGET_TODAY,
+        courseKey: String? = null,
+        itemId: Long? = null
+    ) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         ensureNotificationChannel(context)
+
+        val contentIntent = NotificationNav.buildContentIntent(context, id, target, courseKey, itemId)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
@@ -153,6 +169,7 @@ class UniTrackAlarmReceiver : BroadcastReceiver() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
+            .setContentIntent(contentIntent)
 
         notificationManager.notify(id, builder.build())
     }

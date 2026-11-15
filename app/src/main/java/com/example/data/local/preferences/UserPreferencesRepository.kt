@@ -28,7 +28,6 @@ data class UserPreferences(
     val reminderMinutes: Int = 15,
     val allRemindersEnabled: Boolean = true,
     val defaultReminderOffsets: String = "1440,120",
-    val isDeveloperModeEnabled: Boolean = false,
     val hasSeenPermissionPrompt: Boolean = false
 )
 
@@ -48,7 +47,6 @@ class UserPreferencesRepository(private val context: Context) {
         val REMINDER_MINUTES = intPreferencesKey("reminder_minutes")
         val ALL_REMINDERS_ENABLED = booleanPreferencesKey("all_reminders_enabled")
         val DEFAULT_REMINDER_OFFSETS = stringPreferencesKey("default_reminder_offsets")
-        val IS_DEVELOPER_MODE_ENABLED = booleanPreferencesKey("is_developer_mode_enabled")
         val HAS_SEEN_PERMISSION_PROMPT = booleanPreferencesKey("has_seen_permission_prompt")
     }
 
@@ -67,7 +65,6 @@ class UserPreferencesRepository(private val context: Context) {
             reminderMinutes = preferences[PreferencesKeys.REMINDER_MINUTES] ?: 15,
             allRemindersEnabled = preferences[PreferencesKeys.ALL_REMINDERS_ENABLED] ?: true,
             defaultReminderOffsets = preferences[PreferencesKeys.DEFAULT_REMINDER_OFFSETS] ?: "1440,120",
-            isDeveloperModeEnabled = preferences[PreferencesKeys.IS_DEVELOPER_MODE_ENABLED] ?: false,
             hasSeenPermissionPrompt = preferences[PreferencesKeys.HAS_SEEN_PERMISSION_PROMPT] ?: false
         )
     }
@@ -149,12 +146,6 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun updateDefaultReminderOffsets(offsets: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.DEFAULT_REMINDER_OFFSETS] = offsets
-        }
-    }
-
-    suspend fun updateDeveloperModeEnabled(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.IS_DEVELOPER_MODE_ENABLED] = enabled
         }
     }
 

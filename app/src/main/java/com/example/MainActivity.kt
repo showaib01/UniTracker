@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -23,7 +24,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -34,19 +34,16 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.data.local.entity.CourseSettingEntity
 import com.example.data.sync.PortalSyncWorker
 import com.example.ui.components.AppBackground
 import com.example.ui.components.AppTopBar
 import com.example.ui.components.GlassBottomBar
 import com.example.ui.navigation.Screen
-import com.example.ui.screens.capture.PageCaptureScreen
-import com.example.ui.screens.capture.ParserDebugScreen
-import com.example.ui.screens.capture.ParserDebugViewModel
+import com.example.ui.screens.course.CourseMaterialsScreen
 import com.example.ui.screens.course.CourseScreen
 import com.example.ui.screens.course.CourseViewModel
-import com.example.ui.screens.more.DebugLogScreen
-import com.example.ui.screens.more.DesignSystemScreen
-import com.example.ui.screens.more.MoreScreen
+import com.example.ui.screens.course.DownloadsScreen
 import com.example.ui.screens.more.NoticesScreen
 import com.example.ui.screens.more.SettingsScreen
 import com.example.ui.screens.portal.PortalScreen
@@ -54,17 +51,27 @@ import com.example.ui.screens.routine.RoutineScreen
 import com.example.ui.screens.tasks.TasksScreen
 import com.example.ui.screens.today.TodayScreen
 import com.example.ui.theme.MyApplicationTheme
-import com.example.ui.theme.UniTrackTheme
 import com.example.util.DateTimeUtils
+import com.example.util.NotificationNav
 import com.example.util.UniTrackLogger
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
 
+data class NavPayload(
+    val target: String,
+    val courseKey: String?,
+    val itemId: Long?
+)
+
 class MainActivity : ComponentActivity() {
+    private val _navPayloadState = androidx.compose.runtime.mutableStateOf<NavPayload?>(null)
+    val navPayloadState: androidx.compose.runtime.State<NavPayload?> = _navPayloadState
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleNotificationIntent(intent)
 
         // Trigger on-open sync if last sync was > 6 hours ago and session is active
         lifecycleScope.launch {
@@ -102,6 +109,25 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationIntent(intent)
+    }
+
+    private fun handleNotificationIntent(intent: Intent?) {
+        if (intent == null) return
+        val target = intent.getStringExtra(NotificationNav.EXTRA_NAV_TARGET)
+        if (!target.isNullOrBlank()) {
+            val courseKey = intent.getStringExtra(NotificationNav.EXTRA_COURSE_KEY)
+            val itemId = if (intent.hasExtra(NotificationNav.EXTRA_ITEM_ID)) intent.getLongExtra(NotificationNav.EXTRA_ITEM_ID, -1L) else null
+            _navPayloadState.value = NavPayload(target, courseKey, itemId)
+            intent.removeExtra(NotificationNav.EXTRA_NAV_TARGET)
+            intent.removeExtra(NotificationNav.EXTRA_COURSE_KEY)
+            intent.removeExtra(NotificationNav.EXTRA_ITEM_ID)
+        }
+    }
 }
 
 @Composable
@@ -114,6 +140,45 @@ fun MainAppScreen(
     val currentRoute = navBackStackEntry?.destination?.route
     val context = LocalContext.current
     val app = context.applicationContext as UniTrackApplication
+
+    val navPayload = (context as? MainActivity)?.navPayloadState?.value
+
+    LaunchedEffect(navPayload) {
+        if (navPayload != null) {
+            when (navPayload.target) {
+                NotificationNav.TARGET_COURSE -> {
+                    val key = navPayload.courseKey
+                    if (!key.isNullOrBlank()) {
+                        navController.navigate(Screen.Course.createRoute(key)) {
+                            popUpTo(Screen.Today.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    } else {
+                        navController.navigate(Screen.Today.route) {
+                            popUpTo(Screen.Today.route) { inclusive = true }
+                        }
+                    }
+                }
+                NotificationNav.TARGET_PORTAL -> {
+                    navController.navigate(Screen.Portal.createRoute()) {
+                        popUpTo(Screen.Today.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+                NotificationNav.TARGET_TASKS -> {
+                    navController.navigate(Screen.Tasks.route) {
+                        popUpTo(Screen.Today.route) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+                else -> {
+                    navController.navigate(Screen.Today.route) {
+                        popUpTo(Screen.Today.route) { inclusive = true }
+                    }
+                }
+            }
+        }
+    }
 
     // Due soon & overdue items for top bar badge
     val upcomingItems by app.database.courseItemDao().getUpcomingActiveItems(20).collectAsState(initial = emptyList())
@@ -153,7 +218,11 @@ fun MainAppScreen(
         Screen.More
     )
 
-    val isBottomBarVisible = currentRoute in bottomNavItems.map { it.route }
+    val isPortalRoute = currentRoute?.startsWith("portal") == true
+    val isSettingsSubRoute = isPortalRoute || currentRoute == Screen.CourseMaterials.route || currentRoute == Screen.Downloads.route || currentRoute == Screen.Notices.route
+    val isBottomBarVisible = isPortalRoute || currentRoute in bottomNavItems.map { it.route }
+    val bottomBarActiveRoute = if (isPortalRoute) Screen.More.route else currentRoute
+
     val showAppTopBar = currentRoute in listOf(
         Screen.Today.route,
         Screen.Routine.route,
@@ -176,9 +245,11 @@ fun MainAppScreen(
         else -> "AIUB Student"
     }
 
-    // Unified Top-Level Navigation Helper
+    // Unified Top-Level Navigation Helper with Settings Sub-Screen Popfix
     val navigateToTopLevelTab: (String) -> Unit = { route ->
-        if (currentRoute == route) {
+        if (route == Screen.More.route && isSettingsSubRoute) {
+            navController.popBackStack(Screen.More.route, inclusive = false)
+        } else if (currentRoute == route) {
             navController.popBackStack(route, inclusive = false)
         } else {
             navController.navigate(route) {
@@ -234,7 +305,7 @@ fun MainAppScreen(
                     exit = fadeOut()
                 ) {
                     GlassBottomBar(
-                        currentRoute = currentRoute,
+                        currentRoute = bottomBarActiveRoute,
                         onNavigate = { route ->
                             navigateToTopLevelTab(route)
                         }
@@ -249,7 +320,7 @@ fun MainAppScreen(
             ) {
                 composable(Screen.Today.route) {
                     TodayScreen(
-                        onNavigateToPortal = { navController.navigate(Screen.Portal.route) },
+                        onNavigateToPortal = { navController.navigate(Screen.Portal.createRoute()) },
                         onNavigateToTasks = { navigateToTopLevelTab(Screen.Tasks.route) },
                         onNavigateToRoutine = { navigateToTopLevelTab(Screen.Routine.route) },
                         onOpenCourse = { courseKey -> navController.navigate(Screen.Course.createRoute(courseKey)) }
@@ -259,7 +330,7 @@ fun MainAppScreen(
                 composable(Screen.Routine.route) {
                     RoutineScreen(
                         onOpenCourse = { courseKey -> navController.navigate(Screen.Course.createRoute(courseKey)) },
-                        onNavigateToPortal = { navController.navigate(Screen.Portal.route) }
+                        onNavigateToPortal = { navController.navigate(Screen.Portal.createRoute()) }
                     )
                 }
 
@@ -286,50 +357,27 @@ fun MainAppScreen(
 
                 composable(Screen.More.route) {
                     SettingsScreen(
-                        onNavigateToPortal = { navController.navigate(Screen.Portal.route) },
+                        onNavigateToPortal = { navController.navigate(Screen.Portal.createRoute()) },
                         onNavigateToNotices = { navController.navigate(Screen.Notices.route) },
-                        onNavigateToCapture = { navController.navigate(Screen.PageCapture.route) },
-                        onNavigateToDebug = { navController.navigate(Screen.ParserDebug.route) },
-                        onNavigateToDebugLogs = { navController.navigate(Screen.DebugLog.route) },
-                        onNavigateToDesignSystem = { navController.navigate(Screen.DesignSystem.route) }
+                        onNavigateToCourseMaterials = { navController.navigate(Screen.CourseMaterials.route) },
+                        onNavigateToDownloads = { navController.navigate(Screen.Downloads.route) }
                     )
                 }
 
                 // Sub-screens
-                composable(Screen.Portal.route) {
+                composable(
+                    route = "portal?courseKey={courseKey}",
+                    arguments = listOf(navArgument("courseKey") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    })
+                ) { backStackEntry ->
+                    val rawKey = backStackEntry.arguments?.getString("courseKey")
+                    val decodedKey = if (!rawKey.isNullOrBlank()) URLDecoder.decode(rawKey, "UTF-8") else null
                     PortalScreen(
                         onNavigateBack = onBackCallback,
-                        onNavigateToDebug = { navController.navigate(Screen.ParserDebug.route) },
-                        onNavigateToCaptures = { navController.navigate(Screen.PageCapture.route) }
-                    )
-                }
-
-                composable(Screen.PageCapture.route) {
-                    val debugVm: ParserDebugViewModel = viewModel()
-                    PageCaptureScreen(
-                        onNavigateBack = onBackCallback,
-                        onNavigateToDebugWithPage = { page ->
-                            debugVm.loadPage(page)
-                            navController.navigate(Screen.ParserDebug.route)
-                        }
-                    )
-                }
-
-                composable(Screen.ParserDebug.route) {
-                    ParserDebugScreen(
-                        onNavigateBack = onBackCallback
-                    )
-                }
-
-                composable(Screen.Settings.route) {
-                    SettingsScreen(
-                        onNavigateBack = onBackCallback,
-                        onNavigateToPortal = { navController.navigate(Screen.Portal.route) },
-                        onNavigateToNotices = { navController.navigate(Screen.Notices.route) },
-                        onNavigateToCapture = { navController.navigate(Screen.PageCapture.route) },
-                        onNavigateToDebug = { navController.navigate(Screen.ParserDebug.route) },
-                        onNavigateToDebugLogs = { navController.navigate(Screen.DebugLog.route) },
-                        onNavigateToDesignSystem = { navController.navigate(Screen.DesignSystem.route) }
+                        selectedCourseKey = decodedKey
                     )
                 }
 
@@ -339,14 +387,15 @@ fun MainAppScreen(
                     )
                 }
 
-                composable(Screen.DebugLog.route) {
-                    DebugLogScreen(
-                        onNavigateBack = onBackCallback
+                composable(Screen.CourseMaterials.route) {
+                    CourseMaterialsScreen(
+                        onNavigateBack = onBackCallback,
+                        onSelectCourseForDownload = { courseKey -> navController.navigate(Screen.Portal.createRoute(courseKey)) }
                     )
                 }
 
-                composable(Screen.DesignSystem.route) {
-                    DesignSystemScreen(
+                composable(Screen.Downloads.route) {
+                    DownloadsScreen(
                         onNavigateBack = onBackCallback
                     )
                 }

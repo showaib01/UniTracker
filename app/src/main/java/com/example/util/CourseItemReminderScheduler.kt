@@ -13,7 +13,6 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.MainActivity
 import com.example.UniTrackApplication
 import com.example.data.local.entity.CourseItemEntity
 import com.example.data.local.entity.CourseItemStatus
@@ -98,6 +97,15 @@ class CourseItemReminderWorker(
         val title = "${item.courseName} · ${item.title}"
         val content = "$offsetDesc: Due$timeNotice"
 
+        val notifId = (item.id * 1000 + offsetMinutes).toInt()
+        val contentIntent = NotificationNav.buildContentIntent(
+            context = context,
+            requestCode = notifId,
+            target = NotificationNav.TARGET_COURSE,
+            courseKey = item.courseKey,
+            itemId = item.id
+        )
+
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
@@ -105,8 +113,9 @@ class CourseItemReminderWorker(
             .setStyle(NotificationCompat.BigTextStyle().bigText("$content\n${item.topics.ifBlank { item.notes }}"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .setContentIntent(contentIntent)
 
-        notificationManager.notify((item.id * 1000 + offsetMinutes).toInt(), builder.build())
+        notificationManager.notify(notifId, builder.build())
     }
 }
 

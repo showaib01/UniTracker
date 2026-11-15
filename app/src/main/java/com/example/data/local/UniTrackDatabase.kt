@@ -10,6 +10,7 @@ import com.example.data.local.dao.AttendanceDao
 import com.example.data.local.dao.CapturedPageDao
 import com.example.data.local.dao.CourseItemDao
 import com.example.data.local.dao.CourseSettingDao
+import com.example.data.local.dao.DownloadedFileDao
 import com.example.data.local.dao.NoticeDao
 import com.example.data.local.dao.ResultDao
 import com.example.data.local.dao.RoutineDao
@@ -19,6 +20,7 @@ import com.example.data.local.entity.CapturedPageEntity
 import com.example.data.local.entity.ClassRoutineEntity
 import com.example.data.local.entity.CourseItemEntity
 import com.example.data.local.entity.CourseSettingEntity
+import com.example.data.local.entity.DownloadedFileEntity
 import com.example.data.local.entity.NoticeEntity
 import com.example.data.local.entity.ResultEntity
 import com.example.data.local.entity.TaskEntity
@@ -32,9 +34,10 @@ import com.example.data.local.entity.TaskEntity
         TaskEntity::class,
         CapturedPageEntity::class,
         CourseSettingEntity::class,
-        CourseItemEntity::class
+        CourseItemEntity::class,
+        DownloadedFileEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class UniTrackDatabase : RoomDatabase() {
@@ -47,6 +50,7 @@ abstract class UniTrackDatabase : RoomDatabase() {
     abstract fun capturedPageDao(): CapturedPageDao
     abstract fun courseSettingDao(): CourseSettingDao
     abstract fun courseItemDao(): CourseItemDao
+    abstract fun downloadedFileDao(): DownloadedFileDao
 
     companion object {
         @Volatile
@@ -138,6 +142,25 @@ abstract class UniTrackDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `downloaded_files` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `courseKey` TEXT NOT NULL,
+                        `courseCode` TEXT NOT NULL,
+                        `courseName` TEXT NOT NULL,
+                        `fileName` TEXT NOT NULL,
+                        `filePath` TEXT NOT NULL,
+                        `mimeType` TEXT NOT NULL,
+                        `sizeBytes` INTEGER NOT NULL,
+                        `sourceUrl` TEXT NOT NULL,
+                        `downloadedAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun getDatabase(context: Context): UniTrackDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -145,7 +168,7 @@ abstract class UniTrackDatabase : RoomDatabase() {
                     UniTrackDatabase::class.java,
                     "unitrack_aiub.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                 INSTANCE = instance
                 instance

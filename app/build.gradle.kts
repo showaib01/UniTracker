@@ -107,6 +107,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation("org.jsoup:jsoup:1.18.3")
   implementation("androidx.security:security-crypto:1.1.0-alpha06")
+  implementation("cz.adaptech.tesseract4android:tesseract4android:4.7.0")
   implementation(libs.androidx.work.runtime.ktx)
   // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
