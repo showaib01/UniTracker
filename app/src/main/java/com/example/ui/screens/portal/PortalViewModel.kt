@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.UniTrackApplication
+import com.example.data.auth.CaptchaSolver
 import com.example.data.auth.CredentialStore
 import com.example.data.auth.LoginResult
 import com.example.data.auth.PortalAuth
@@ -83,6 +84,10 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
     private var manualRefreshCallback: (suspend () -> Bitmap?)? = null
 
     init {
+        viewModelScope.launch {
+            CaptchaSolver.warmUp(application)
+        }
+
         viewModelScope.launch {
             preferencesRepository.userPreferencesFlow.collect { prefs ->
                 _uiState.update { current ->

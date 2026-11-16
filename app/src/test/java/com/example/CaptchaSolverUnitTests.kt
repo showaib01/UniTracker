@@ -2,7 +2,9 @@ package com.example
 
 import com.example.data.auth.CaptchaSolver
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CaptchaSolverUnitTests {
@@ -26,13 +28,42 @@ class CaptchaSolverUnitTests {
 
     @Test
     fun testDecideAnswer() {
-        // Pass 1 high confidence (>= 85)
-        assertEquals(15, CaptchaSolver.decideAnswer(15, 90, 12))
-        // Pass 1 and Pass 2 match
-        assertEquals(20, CaptchaSolver.decideAnswer(20, 60, 20))
-        // Pass 1 low confidence and does not match pass 2
-        assertNull(CaptchaSolver.decideAnswer(10, 50, 12))
-        // Pass 1 null
-        assertNull(CaptchaSolver.decideAnswer(null, 90, 15))
+        // (a1=7, c1=90, a2=null) -> 7
+        assertEquals(7, CaptchaSolver.decideAnswer(7, 90, null))
+        // (7, 60, 7) -> 7
+        assertEquals(7, CaptchaSolver.decideAnswer(7, 60, 7))
+        // (7, 60, 8) -> null
+        assertNull(CaptchaSolver.decideAnswer(7, 60, 8))
+        // (7, 60, null) -> null
+        assertNull(CaptchaSolver.decideAnswer(7, 60, null))
+        // (null, 90, 7) -> null
+        assertNull(CaptchaSolver.decideAnswer(null, 90, 7))
+    }
+
+    @Test
+    fun testPreprocessingAndDespeckle() {
+        val w = 100
+        val h = 40
+        val ink = BooleanArray(w * h)
+        // Synthetic dotted blue glyph: larger connected area
+        for (y in 10..20) {
+            for (x in 10..40) {
+                ink[y * w + x] = true
+            }
+        }
+        // Small noise dots (1-4 pixels)
+        ink[2 * w + 2] = true
+        ink[35 * w + 95] = true
+
+        val despeckled = CaptchaSolver.despeckle(ink, w, h, minBlobSize = 5)
+        // Noise dots should be removed
+        assertFalse(despeckled[2 * w + 2])
+        assertFalse(despeckled[35 * w + 95])
+        // Glyph should survive
+        assertTrue(despeckled[15 * w + 25])
+
+        val dilated = CaptchaSolver.directionalDilate(despeckled, w, h, radius = 2)
+        val count = dilated.count { it }
+        assertTrue(count >= 100)
     }
 }

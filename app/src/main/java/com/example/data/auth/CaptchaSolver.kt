@@ -6,13 +6,15 @@ import android.graphics.Color
 import com.example.BuildConfig
 import com.example.util.UniTrackLogger
 import com.googlecode.tesseract.android.TessBaseAPI
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 
 object CaptchaSolver {
 
-    private const val CONFIDENCE_THRESHOLD = 55
+    private const val CONFIDENCE_THRESHOLD = 85
     private const val MIN_INK_COUNT = 100
     private const val MIN_BLOB_SIZE = 5
     private const val UPSCALE_SCALE = 4
@@ -31,11 +33,13 @@ object CaptchaSolver {
             val tessDir = ensureTessData(context)
             if (tessDir == null) {
                 initFailed = true
+                UniTrackLogger.e("CaptchaSolver: ensureTessData returned null")
                 return null
             }
             val api = TessBaseAPI()
-            val success = api.init(tessDir.absolutePath, "eng")
+            val success = api.init(context.filesDir.absolutePath, "eng")
             if (!success) {
+                UniTrackLogger.e("CaptchaSolver: Failed to initialize Tesseract with path: ${context.filesDir.absolutePath}")
                 api.recycle()
                 initFailed = true
                 return null
@@ -44,11 +48,19 @@ object CaptchaSolver {
             api.setVariable(TessBaseAPI.VAR_CHAR_WHITELIST, "0123456789+-=?")
             tessApi = api
             return api
-        } catch (e: Exception) {
-            UniTrackLogger.e("CaptchaSolver: Failed to initialize Tesseract: ${e.message}")
+        } catch (e: Throwable) {
+            UniTrackLogger.e("CaptchaSolver: Failed to initialize Tesseract (likely JVM/Robolectric test environment): ${e.message}")
             initFailed = true
             return null
         }
+    }
+
+    fun isReady(context: Context): Boolean {
+        return getTessApi(context) != null
+    }
+
+    suspend fun warmUp(context: Context) = withContext(Dispatchers.Default) {
+        getTessApi(context)
     }
 
     private fun ensureTessData(context: Context): File? {
@@ -105,8 +117,45 @@ object CaptchaSolver {
         return b > 200 && r < 60 && g < 60
     }
 
-    fun solve(context: Context, bitmap: Bitmap): Int? {
-        val api = getTessApi(context) ?: return null
+    // Reusable buffers for despeckle
+    private var cachedWidth = 0
+    private var cachedHeight = 0
+    private var cachedVisited: BooleanArray? = null
+    private var cachedQueue: IntArray? = null
+    private var cachedComponent: IntArray? = null
+
+    private fun getBuffers(w: Int, h: Int): Triple<BooleanArray, IntArray, IntArray> {
+        val size = w * h
+        if (cachedWidth != w || cachedHeight != h || cachedVisited == null || cachedVisited!!.size < size) {
+            cachedWidth = w
+            cachedHeight = h
+            cachedVisited = BooleanArray(size)
+            cachedQueue = IntArray(size)
+            cachedComponent = IntArray(size)
+        }
+        return Triple(cachedVisited!!, cachedQueue!!, cachedComponent!!)
+    }
+
+    data class SolverResult(
+        val decision: Int?,
+        val decodeTimeMs: Long,
+        val inkCount: Int,
+        val pipeline: String,
+        val preTimeMs: Long,
+        val ocr1TimeMs: Long,
+        val conf1: Int,
+        val conf2: Int,
+        val text1: String,
+        val ocr2TimeMs: Long,
+        val text2: String?,
+        val ans2: Int?
+    )
+
+    fun solveWithMetrics(context: Context, bitmap: Bitmap): SolverResult {
+        val startTime = System.nanoTime()
+        val api = getTessApi(context) ?: return SolverResult(null, 0L, 0, "error", 0L, 0L, 0, 0, "", 0L, null, null)
+
+        val decodeTime = (System.nanoTime() - startTime) / 1_000_000L
 
         if (BuildConfig.DEBUG) {
             debugBitmapSink?.invoke("captcha_last_raw.png", bitmap)
@@ -124,18 +173,26 @@ object CaptchaSolver {
             }
         }
 
+        val preStartTime = System.nanoTime()
         if (inkCount < MIN_INK_COUNT) {
             val fallbackBmp = processFallback(pixels, w, h)
+            val preTime = (System.nanoTime() - preStartTime) / 1_000_000L
+            val ocrStartTime = System.nanoTime()
+            var text = ""
+            var conf = 0
             synchronized(this) {
                 api.setImage(fallbackBmp)
-                val text = api.utF8Text ?: ""
-                val conf = api.meanConfidence()
-                val ans = parseEquation(text)
-                if (BuildConfig.DEBUG) {
-                    UniTrackLogger.d("CaptchaSolver [Fallback]: conf=$conf, text='$text', ans=$ans")
-                }
-                return if (conf >= CONFIDENCE_THRESHOLD && ans != null) ans else null
+                text = api.utF8Text ?: ""
+                conf = api.meanConfidence()
             }
+            val ocrTime = (System.nanoTime() - ocrStartTime) / 1_000_000L
+            val ans = parseEquation(text)
+            if (BuildConfig.DEBUG) {
+                debugBitmapSink?.invoke("captcha_last_pass1.png", fallbackBmp)
+                UniTrackLogger.d("CaptchaSolver [Fallback]: conf=$conf, text='$text', ans=$ans")
+            }
+            val decision = if (conf >= CONFIDENCE_THRESHOLD && ans != null) ans else null
+            return SolverResult(decision, decodeTime, inkCount, "luminance", preTime, ocrTime, conf, 0, text, 0L, null, null)
         }
 
         val ink = BooleanArray(w * h)
@@ -145,33 +202,52 @@ object CaptchaSolver {
 
         val despeckled = despeckle(ink, w, h, minBlobSize = MIN_BLOB_SIZE)
         val pass1Bmp = processPass1(despeckled, w, h)
-        val pass2Bmp = processPass2(despeckled, w, h)
+        val preTime = (System.nanoTime() - preStartTime) / 1_000_000L
 
         if (BuildConfig.DEBUG) {
             debugBitmapSink?.invoke("captcha_last_pass1.png", pass1Bmp)
         }
 
+        val ocr1StartTime = System.nanoTime()
+        var text1 = ""
+        var conf1 = 0
+        var ans1: Int? = null
         synchronized(this) {
             api.setImage(pass1Bmp)
-            val text1 = api.utF8Text ?: ""
-            val conf1 = api.meanConfidence()
-            val ans1 = parseEquation(text1)
-
-            if (BuildConfig.DEBUG) {
-                UniTrackLogger.d("CaptchaSolver: pass=1, conf=$conf1, text='$text1', ans=$ans1")
-            }
-
-            api.setImage(pass2Bmp)
-            val text2 = api.utF8Text ?: ""
-            val conf2 = api.meanConfidence()
-            val ans2 = parseEquation(text2)
-
-            if (BuildConfig.DEBUG) {
-                UniTrackLogger.d("CaptchaSolver: pass=2, conf=$conf2, text='$text2', ans=$ans2")
-            }
-
-            return decideAnswer(ans1, conf1, ans2)
+            text1 = api.utF8Text ?: ""
+            conf1 = api.meanConfidence()
+            ans1 = parseEquation(text1)
         }
+        val ocr1Time = (System.nanoTime() - ocr1StartTime) / 1_000_000L
+
+        // Lazy pass 2 evaluation (run only when pass 1 is not accepted: a1 != null && c1 >= 85 -> return immediately)
+        if (ans1 != null && conf1 >= 85) {
+            return SolverResult(ans1, decodeTime, inkCount, "blue", preTime, ocr1Time, conf1, 0, text1, 0L, null, null)
+        }
+
+        val pass2Bmp = processPass2(despeckled, w, h)
+        if (BuildConfig.DEBUG) {
+            debugBitmapSink?.invoke("captcha_last_pass2.png", pass2Bmp)
+        }
+
+        val ocr2StartTime = System.nanoTime()
+        var text2 = ""
+        var conf2 = 0
+        var ans2: Int? = null
+        synchronized(this) {
+            api.setImage(pass2Bmp)
+            text2 = api.utF8Text ?: ""
+            conf2 = api.meanConfidence()
+            ans2 = parseEquation(text2)
+        }
+        val ocr2Time = (System.nanoTime() - ocr2StartTime) / 1_000_000L
+
+        val decision = decideAnswer(ans1, conf1, ans2)
+        return SolverResult(decision, decodeTime, inkCount, "blue", preTime, ocr1Time, conf1, conf2, text1, ocr2Time, text2, ans2)
+    }
+
+    fun solve(context: Context, bitmap: Bitmap): Int? {
+        return solveWithMetrics(context, bitmap).decision
     }
 
     fun decideAnswer(a1: Int?, c1: Int, a2: Int?): Int? {
@@ -180,10 +256,9 @@ object CaptchaSolver {
         return null
     }
 
-    private fun despeckle(ink: BooleanArray, w: Int, h: Int, minBlobSize: Int): BooleanArray {
-        val visited = BooleanArray(w * h)
-        val queue = IntArray(w * h)
-        val component = IntArray(w * h)
+    internal fun despeckle(ink: BooleanArray, w: Int, h: Int, minBlobSize: Int): BooleanArray {
+        val (visited, queue, component) = getBuffers(w, h)
+        visited.fill(false, 0, w * h)
 
         for (y in 0 until h) {
             for (x in 0 until w) {
@@ -230,7 +305,7 @@ object CaptchaSolver {
         return ink
     }
 
-    private fun directionalDilate(src: BooleanArray, w: Int, h: Int, radius: Int): BooleanArray {
+    internal fun directionalDilate(src: BooleanArray, w: Int, h: Int, radius: Int): BooleanArray {
         val out = BooleanArray(w * h)
         for (y in 0 until h) {
             for (x in 0 until w) {
