@@ -230,11 +230,11 @@ fun MainAppScreen(
     )
 
     val topBarTitle = when (currentRoute) {
-        Screen.Today.route -> "UniTrack"
+        Screen.Today.route -> "UniTracker"
         Screen.Routine.route -> "Routine"
         Screen.Tasks.route -> "Tasks & Quizzes"
         Screen.More.route -> "Settings & Tools"
-        else -> "UniTrack"
+        else -> "UniTracker"
     }
 
     val topBarSubtitle = when (currentRoute) {

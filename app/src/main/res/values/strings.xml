@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">UniTrack</string>
+    <string name="app_name">UniTracker</string>
     <string name="nav_today">Today</string>
     <string name="nav_routine">Routine</string>
     <string name="nav_tasks">Tasks</string>

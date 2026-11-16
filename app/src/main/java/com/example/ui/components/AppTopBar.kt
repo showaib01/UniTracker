@@ -48,7 +48,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun AppTopBar(
     modifier: Modifier = Modifier,
-    title: String = "UniTrack",
+    title: String = "UniTracker",
     subtitle: String = "Academic Routine",
     badgeCount: Int = 0,
     onNotificationsClick: () -> Unit = {},

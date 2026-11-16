@@ -169,9 +169,9 @@ class PortalSyncWorker(
 
         val notification = NotificationCompat.Builder(ctx, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("UniTrack: Portal Session Expired")
-            .setContentText("Session expired. Open UniTrack and log in once to refresh your routine.")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("Session expired. Open UniTrack and log in once to refresh your routine."))
+            .setContentTitle("UniTracker: Portal Session Expired")
+            .setContentText("Session expired. Open UniTracker and log in once to refresh your routine.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("Session expired. Open UniTracker and log in once to refresh your routine."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)

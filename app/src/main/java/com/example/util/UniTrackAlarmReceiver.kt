@@ -40,7 +40,7 @@ class UniTrackAlarmReceiver : BroadcastReceiver() {
                 showNotification(
                     context,
                     id = 9991,
-                    title = "UniTrack Test Notification",
+                    title = "UniTracker Test Notification",
                     text = "Alarms and notifications are working properly!",
                     target = NotificationNav.TARGET_TODAY
                 )
@@ -51,7 +51,7 @@ class UniTrackAlarmReceiver : BroadcastReceiver() {
                 showNotification(
                     context,
                     id = 9992,
-                    title = "UniTrack 1-Minute Test",
+                    title = "UniTracker 1-Minute Test",
                     text = "Exact Alarm fired successfully while app was backgrounded/closed!",
                     target = NotificationNav.TARGET_TODAY
                 )
@@ -186,7 +186,7 @@ class UniTrackAlarmReceiver : BroadcastReceiver() {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 val channel = NotificationChannel(
                     CHANNEL_ID,
-                    "UniTrack Class & Deadline Reminders",
+                    "UniTracker Class & Deadline Reminders",
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "Exact alarms and reminders for classes, tests, and deadlines"

@@ -636,11 +636,11 @@ fun SettingsScreen(
     if (showAboutDialog) {
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
-            title = { Text("About UniTrack", style = typography.sectionTitle, color = colors.textPrimary) },
+            title = { Text("About UniTracker", style = typography.sectionTitle, color = colors.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("UniTrack v1.2.0", style = typography.body, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                    Text("UniTrack is an unofficial, student-built independent academic assistant for American International University-Bangladesh (AIUB) and is not officially affiliated with AIUB.", style = typography.body, color = colors.textSecondary)
+                    Text("UniTracker v1.2.0", style = typography.body, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                    Text("UniTracker is an unofficial, student-built independent academic assistant for American International University-Bangladesh (AIUB) and is not officially affiliated with AIUB.", style = typography.body, color = colors.textSecondary)
                     Text("Tracks and syncs your student portal class routines to be available completely offline. Features secure student portal login, OCR captcha solver, offline class routines tracking, course materials, and timely proactive reminders before upcoming classes and tasks.", style = typography.meta, color = colors.textSecondary)
                 }
             },
@@ -972,8 +972,8 @@ fun SettingsScreen(
                     ) {
                         Column {
                             SettingsRow(
-                                title = "Version 1.0.0",
-                                subtitle = "UniTrack",
+                                title = "Version 1.2.0",
+                                subtitle = "UniTracker",
                                 icon = Icons.Outlined.Info,
                                 iconTint = colors.accentCyan,
                                 testTag = "settings_version_row"
@@ -982,7 +982,7 @@ fun SettingsScreen(
                             SettingsRowDivider()
 
                             SettingsRow(
-                                title = "About UniTrack",
+                                title = "About UniTracker",
                                 subtitle = "Offline-first academic assistant for AIUB",
                                 icon = Icons.Outlined.School,
                                 iconTint = colors.sand,

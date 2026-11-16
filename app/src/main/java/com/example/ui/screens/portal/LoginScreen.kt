@@ -110,7 +110,7 @@ fun LoginScreen(
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.ic_launcher_unitrack),
-                    contentDescription = "UniTrack Logo",
+                    contentDescription = "UniTracker Logo",
                     modifier = Modifier.size(64.dp),
                     contentScale = ContentScale.Fit
                 )
