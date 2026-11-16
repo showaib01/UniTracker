@@ -55,9 +55,11 @@ class NavigationTest {
         composeTestRule.onNodeWithTag("nav_item_more").performClick()
         composeTestRule.waitForIdle()
 
-        // Tap Account row in Settings -> opens Portal sub-screen
+        // Tap Account row in Settings -> opens Portal sub-screen (showing LoginScreen)
         composeTestRule.onNodeWithTag("settings_account_row").performClick()
         composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("login_screen").assertIsDisplayed()
 
         // Tap Home bottom bar item -> goes to Today
         composeTestRule.onNodeWithTag("nav_item_today").performClick()
@@ -79,6 +81,8 @@ class NavigationTest {
         // Tap Account row in Settings -> opens Portal sub-screen
         composeTestRule.onNodeWithTag("settings_account_row").performClick()
         composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("login_screen").assertIsDisplayed()
 
         // Tap Settings bottom bar item -> should show Settings root on first tap
         composeTestRule.onNodeWithTag("nav_item_more").performClick()

@@ -2,6 +2,7 @@ package com.example.ui.screens.portal
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.UniTrackApplication
@@ -9,12 +10,12 @@ import com.example.data.auth.CredentialStore
 import com.example.data.auth.LoginResult
 import com.example.data.auth.PortalAuth
 import com.example.data.local.entity.CapturedPageEntity
-import com.example.data.local.preferences.UserPreferencesRepository
 import com.example.data.parser.PageState
 import com.example.data.parser.RoutineParser
 import com.example.util.CapturedPageHolder
 import com.example.util.UniTrackLogger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -23,13 +24,12 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed interface PortalEvent {
     data class SignedIn(val landingUrl: String) : PortalEvent
-    data class WrongCredentials(val studentId: String) : PortalEvent
-    data class ManualRequired(val reason: LoginResult) : PortalEvent
 }
 
 sealed class AutoSignInState {
@@ -50,7 +50,10 @@ data class PortalUiState(
     val rememberStudentId: Boolean = false,
     val lastCapturedHtml: String? = null,
     val captureMessage: String? = null,
-    val captureWarnings: List<String> = emptyList()
+    val captureWarnings: List<String> = emptyList(),
+    val captchaBitmap: Bitmap? = null,
+    val isManualCaptchaStage: Boolean = false,
+    val signInError: String? = null
 )
 
 class PortalViewModel(application: Application) : AndroidViewModel(application) {
@@ -68,9 +71,6 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
     private val _autoSignInState = MutableStateFlow<AutoSignInState>(AutoSignInState.Idle)
     val autoSignInState: StateFlow<AutoSignInState> = _autoSignInState.asStateFlow()
 
-    private val _signInError = MutableStateFlow<String?>(null)
-    val signInError: StateFlow<String?> = _signInError.asStateFlow()
-
     private val _events = MutableSharedFlow<PortalEvent>(extraBufferCapacity = 8)
     val events: SharedFlow<PortalEvent> = _events.asSharedFlow()
 
@@ -78,12 +78,9 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
     val toastEvent: SharedFlow<String> = _toastEvent.asSharedFlow()
 
     private var autoSignInJob: Job? = null
-    var autoAttemptedThisVisit: Boolean = false
-        private set
-    private var lastSessionExpiredAutoAttemptTime: Long = 0L
 
-    @Volatile
-    private var pendingCredentials: Pair<String, String>? = null
+    private var manualCaptchaDeferred: CompletableDeferred<String?>? = null
+    private var manualRefreshCallback: (suspend () -> Bitmap?)? = null
 
     init {
         viewModelScope.launch {
@@ -95,6 +92,17 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
                         rememberStudentId = prefs.rememberStudentId,
                         isSessionActive = prefs.isSessionActive
                     )
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            delay(300)
+            val prefs = preferencesRepository.userPreferencesFlow.first()
+            if (!prefs.isSessionActive && prefs.studentId.isNotBlank()) {
+                val creds = CredentialStore(application).load()
+                if (creds != null) {
+                    startLogin(application, creds.first, creds.second, prefs.rememberStudentId)
                 }
             }
         }
@@ -165,27 +173,9 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(progress = progress, isLoading = progress < 100) }
     }
 
-    fun onCredentialsCaptured(studentId: String, password: String) {
-        if (studentId.isNotBlank() && password.isNotBlank()) {
-            pendingCredentials = Pair(studentId, password)
-            UniTrackLogger.d("PortalViewModel: Captured credentials in memory")
-        }
-    }
-
     fun onLoginConfirmed() {
-        _uiState.update { it.copy(isSessionActive = true, isSessionExpiredPrompt = false) }
+        _uiState.update { it.copy(isSessionActive = true, isSessionExpiredPrompt = false, isManualCaptchaStage = false, captchaBitmap = null) }
         viewModelScope.launch { preferencesRepository.updateSessionActive(true) }
-
-        pendingCredentials?.let { (id, pass) ->
-            CredentialStore(app).save(id, pass)
-            saveStudentIdPreference(id, true)
-            UniTrackLogger.i("PortalViewModel: Confirmed login! Saved credentials to CredentialStore")
-            pendingCredentials = null
-        }
-    }
-
-    fun clearPendingCredentials() {
-        pendingCredentials = null
     }
 
     fun handlePageState(state: PageState, url: String, hasSavedCreds: Boolean, isSheetVisible: Boolean) {
@@ -196,7 +186,6 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
                 onLoginConfirmed()
             }
             PageState.LOGIN -> {
-                clearPendingCredentials()
                 if (wasActive && _autoSignInState.value !is AutoSignInState.Running) {
                     _uiState.update { it.copy(isSessionActive = false) }
                     viewModelScope.launch { preferencesRepository.updateSessionActive(false) }
@@ -210,81 +199,90 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun canStartAutoAttempt(
-        hasSavedCreds: Boolean,
-        isRetry: Boolean,
-        isSessionExpiredTransition: Boolean,
-        userChoseManual: Boolean
-    ): Boolean {
-        if (!hasSavedCreds || pendingCredentials != null || userChoseManual) return false
-        if (isRetry) return true
-        if (isSessionExpiredTransition) {
-            val now = System.currentTimeMillis()
-            return (now - lastSessionExpiredAutoAttemptTime >= 300_000L)
+    fun startLogin(context: Context, studentId: String, password: String, remember: Boolean) {
+        if (studentId.isBlank() || password.isBlank()) {
+            _uiState.update { it.copy(signInError = "Please fill in both Student ID and Password.") }
+            return
         }
-        return !autoAttemptedThisVisit
-    }
-
-    fun startAutoSignIn(
-        context: Context,
-        studentId: String? = null,
-        password: String? = null,
-        isRetry: Boolean = false,
-        isSessionExpiredTransition: Boolean = false
-    ) {
-        val creds = if (!studentId.isNullOrBlank() && !password.isNullOrBlank()) {
-            Pair(studentId, password)
+        if (remember) {
+            CredentialStore(context).save(studentId, password)
+            saveStudentIdPreference(studentId, true)
         } else {
-            CredentialStore(context).load()
-        }
-        if (creds == null) return
-
-        if (!isRetry && !isSessionExpiredTransition) {
-            autoAttemptedThisVisit = true
-        } else if (isSessionExpiredTransition) {
-            lastSessionExpiredAutoAttemptTime = System.currentTimeMillis()
+            CredentialStore(context).clear()
+            saveStudentIdPreference(studentId, false)
         }
 
-        _signInError.value = null
+        _uiState.update { it.copy(signInError = null) }
         autoSignInJob?.cancel()
 
         autoSignInJob = viewModelScope.launch {
             _autoSignInState.value = AutoSignInState.Running(1, PortalAuth.MAX_SOLVER_ATTEMPTS)
             val result = try {
-                PortalAuth.login(context, creds.first, creds.second) { attempt, max ->
-                    _autoSignInState.update { AutoSignInState.Running(attempt, max) }
-                }
+                PortalAuth.login(
+                    context = context,
+                    username = studentId,
+                    password = password,
+                    manualCaptcha = { bitmap, refresh ->
+                        _uiState.update { it.copy(captchaBitmap = bitmap, isManualCaptchaStage = true, isLoading = false) }
+                        manualRefreshCallback = refresh
+                        val deferred = CompletableDeferred<String?>()
+                        manualCaptchaDeferred = deferred
+                        deferred.await()
+                    },
+                    onProgress = { attempt, max ->
+                        _autoSignInState.update { AutoSignInState.Running(attempt, max) }
+                    }
+                )
             } catch (e: CancellationException) {
                 _autoSignInState.value = AutoSignInState.Idle
+                _uiState.update { it.copy(isManualCaptchaStage = false, captchaBitmap = null) }
                 throw e
             }
+
+            _uiState.update { it.copy(isManualCaptchaStage = false, captchaBitmap = null) }
+            manualCaptchaDeferred = null
+            manualRefreshCallback = null
 
             when (result) {
                 is LoginResult.Success -> {
                     _autoSignInState.value = AutoSignInState.Idle
-                    if (!studentId.isNullOrBlank() && !password.isNullOrBlank()) {
-                        CredentialStore(context).save(studentId, password)
-                        saveStudentIdPreference(studentId, true)
-                    }
                     onLoginConfirmed()
                     _events.emit(PortalEvent.SignedIn(result.landingUrl))
                 }
                 is LoginResult.WrongCredentials -> {
                     CredentialStore(context).clear()
-                    _signInError.value = "Incorrect Student ID or Password."
-                    _autoSignInState.value = AutoSignInState.Failed("Wrong credentials", result)
-                    _events.emit(PortalEvent.WrongCredentials(creds.first))
+                    val err = "Incorrect Student ID or Password."
+                    _uiState.update { it.copy(signInError = err) }
+                    _autoSignInState.value = AutoSignInState.Failed(err, result)
                 }
                 is LoginResult.Locked, is LoginResult.CaptchaFailed, is LoginResult.NetworkError, is LoginResult.Cancelled -> {
                     val errorMsg = when (result) {
                         is LoginResult.Locked -> "Account is locked."
                         is LoginResult.NetworkError -> "Network error. Check your connection."
-                        else -> "Couldn't read the captcha. Tap Sign in to try again."
+                        else -> "Sign in failed or cancelled."
                     }
-                    _signInError.value = errorMsg
+                    _uiState.update { it.copy(signInError = errorMsg) }
                     _autoSignInState.value = AutoSignInState.Failed(errorMsg, result)
-                    _events.emit(PortalEvent.ManualRequired(result))
                 }
+            }
+        }
+    }
+
+    fun submitManualCaptcha(answer: String) {
+        if (answer.isBlank()) {
+            _uiState.update { it.copy(signInError = "Please enter the captcha answer.") }
+            return
+        }
+        _uiState.update { it.copy(signInError = null) }
+        manualCaptchaDeferred?.complete(answer.trim())
+    }
+
+    fun refreshManualCaptcha() {
+        val refresh = manualRefreshCallback ?: return
+        viewModelScope.launch {
+            val newBmp = refresh()
+            if (newBmp != null) {
+                _uiState.update { it.copy(captchaBitmap = newBmp) }
             }
         }
     }
@@ -292,7 +290,11 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
     fun cancelAutoSignIn() {
         autoSignInJob?.cancel()
         autoSignInJob = null
+        manualCaptchaDeferred?.complete(null)
+        manualCaptchaDeferred = null
+        manualRefreshCallback = null
         _autoSignInState.value = AutoSignInState.Idle
+        _uiState.update { it.copy(isManualCaptchaStage = false, captchaBitmap = null, signInError = null) }
     }
 
     fun dismissSessionExpiredPrompt() {
@@ -365,7 +367,7 @@ class PortalViewModel(application: Application) : AndroidViewModel(application) 
             val pageType = when {
                 isRoutine -> "ROUTINE"
                 lowerUrl.contains("grade") || lowerUrl.contains("result") -> "RESULTS"
-                lowerUrl.contains("notice") -> "NOTICES"
+                lowerUrl.contains("notice") -> "Notices"
                 lowerUrl.contains("login") -> "LOGIN"
                 else -> "PORTAL_PAGE"
             }

@@ -10,7 +10,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -18,7 +17,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,7 +26,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,7 +36,6 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,7 +46,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,7 +66,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
-import com.example.data.auth.CredentialStore
 import com.example.data.auth.PortalAuth
 import com.example.data.download.CourseDownloadManager
 import com.example.data.local.entity.CourseSettingEntity
@@ -79,9 +73,7 @@ import com.example.data.parser.PageState
 import com.example.data.parser.PortalSelectorConfig
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.UniTrackTheme
-import com.example.util.UniTrackLogger
 import kotlinx.coroutines.flow.collectLatest
-import org.json.JSONObject
 import java.io.File
 
 private data class DownloadPendingParams(
@@ -90,22 +82,6 @@ private data class DownloadPendingParams(
     val contentDisposition: String?,
     val mimeType: String?
 )
-
-private class PortalWebAppBridge(
-    private val viewModel: PortalViewModel
-) {
-    @JavascriptInterface
-    fun onLoginSubmit(id: String, pass: String) {
-        try {
-            val currentUrl = viewModel.uiState.value.currentUrl
-            if (currentUrl.startsWith("https://portal.aiub.edu", ignoreCase = true)) {
-                viewModel.onCredentialsCaptured(id, pass)
-            }
-        } catch (_: Throwable) {
-            // Safe bridge guard
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,12 +106,9 @@ fun PortalScreen(
         routines.distinctBy { CourseSettingEntity.makeKey(it.courseName, it.section) }
     }
 
-    val initialCourse = remember(distinctCourses, selectedCourseKey) {
-        distinctCourses.firstOrNull { CourseSettingEntity.makeKey(it.courseName, it.section) == selectedCourseKey }
-    }
-
     var activeCourseKey by remember { mutableStateOf(selectedCourseKey) }
     var activeCourseFolder by remember {
+        val initialCourse = distinctCourses.firstOrNull { CourseSettingEntity.makeKey(it.courseName, it.section) == selectedCourseKey }
         mutableStateOf(
             if (initialCourse != null) Pair(initialCourse.courseCode.ifBlank { "COURSE" }, initialCourse.courseName) else null
         )
@@ -143,9 +116,6 @@ fun PortalScreen(
 
     var pendingDownload by remember { mutableStateOf<DownloadPendingParams?>(null) }
     var showFolderPickerSheet by remember { mutableStateOf(false) }
-    var showSignInSheet by remember { mutableStateOf(false) }
-    var userChoseManual by remember { mutableStateOf(false) }
-    var prefilledStudentId by remember { mutableStateOf(uiState.studentId) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -161,41 +131,6 @@ fun PortalScreen(
                     }
                     cookieManager.flush()
                     webView?.loadUrl(event.landingUrl)
-                    showSignInSheet = false
-                }
-                is PortalEvent.WrongCredentials -> {
-                    prefilledStudentId = event.studentId
-                    showSignInSheet = true
-                }
-                is PortalEvent.ManualRequired -> {
-                    val creds = CredentialStore(context).load()
-                    if (creds != null) {
-                        val webView = PortalWebViewHolder.getWebView()
-                        val idJson = JSONObject.quote(creds.first)
-                        val passJson = JSONObject.quote(creds.second)
-                        webView?.evaluateJavascript(
-                            """
-                            (function() {
-                                var u = document.querySelector('input[name="UserName"]');
-                                var p = document.querySelector('input[name="Password"]');
-                                if (u) { u.value = $idJson; u.dispatchEvent(new Event('input', {bubbles:true})); u.dispatchEvent(new Event('change', {bubbles:true})); }
-                                if (p) { p.value = $passJson; p.dispatchEvent(new Event('input', {bubbles:true})); p.dispatchEvent(new Event('change', {bubbles:true})); }
-                                var c = document.querySelector('#CaptchaInputText');
-                                if (c) c.focus();
-                            })();
-                            """.trimIndent(),
-                            null
-                        )
-                    }
-
-                    val snackResult = snackbarHostState.showSnackbar(
-                        message = "Couldn't read the captcha automatically. Type it yourself or tap Retry.",
-                        actionLabel = "Retry",
-                        duration = SnackbarDuration.Long
-                    )
-                    if (snackResult == SnackbarResult.ActionPerformed) {
-                        viewModel.startAutoSignIn(context, isRetry = true)
-                    }
                 }
             }
         }
@@ -235,6 +170,41 @@ fun PortalScreen(
         }
     }
 
+    // If session is NOT active or manual captcha stage, show LoginScreen
+    if (!uiState.isSessionActive || uiState.isManualCaptchaStage) {
+        val isRunning = autoSignInState is AutoSignInState.Running && !uiState.isManualCaptchaStage
+        val progressText = if (autoSignInState is AutoSignInState.Running) {
+            val r = autoSignInState as AutoSignInState.Running
+            "Reading captcha... (${r.attempt}/${r.max})"
+        } else if (uiState.isManualCaptchaStage) {
+            "Please solve the captcha below"
+        } else null
+
+        LoginScreen(
+            initialStudentId = uiState.studentId,
+            initialRememberMe = uiState.rememberStudentId,
+            isRunning = isRunning,
+            progressText = progressText,
+            errorText = uiState.signInError,
+            captchaBitmap = uiState.captchaBitmap,
+            onLogin = { id, pass, captchaAns, remember ->
+                if (uiState.isManualCaptchaStage) {
+                    viewModel.submitManualCaptcha(captchaAns)
+                } else {
+                    viewModel.startLogin(context, id, pass, remember)
+                }
+            },
+            onRefreshCaptcha = {
+                viewModel.refreshManualCaptcha()
+            },
+            onCancel = {
+                viewModel.cancelAutoSignIn()
+            },
+            modifier = modifier
+        )
+        return
+    }
+
     // Handle system back gesture
     BackHandler(enabled = uiState.canGoBack) {
         val webView = PortalWebViewHolder.getWebView()
@@ -245,7 +215,7 @@ fun PortalScreen(
         }
     }
 
-    // Session expired AlertDialog (must NOT show while auto sign-in is Running)
+    // Session expired AlertDialog
     if (uiState.isSessionExpiredPrompt && autoSignInState !is AutoSignInState.Running) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissSessionExpiredPrompt() },
@@ -270,7 +240,6 @@ fun PortalScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // WebView filling screen
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
@@ -280,8 +249,6 @@ fun PortalScreen(
                         )
 
                         configureWebView(this, context)
-
-                        addJavascriptInterface(PortalWebAppBridge(viewModel), "UniTrackBridge")
 
                         setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
                             if (activeCourseFolder != null) {
@@ -340,53 +307,7 @@ fun PortalScreen(
                                     ) { rawJson ->
                                         val clean = rawJson?.replace("\"", "")?.trim() ?: "other"
                                         val state = PortalSelectorConfig.classifyPage(clean, currentUrlStr)
-
-                                        val credStore = CredentialStore(context)
-                                        val hasSavedCreds = credStore.hasCredentials()
-
-                                        viewModel.handlePageState(state, currentUrlStr, hasSavedCreds, showSignInSheet)
-
-                                        when (state) {
-                                            PageState.APP -> {
-                                                showSignInSheet = false
-                                            }
-                                            PageState.LOGIN -> {
-                                                if (viewModel.canStartAutoAttempt(hasSavedCreds, isRetry = false, isSessionExpiredTransition = uiState.isSessionActive, userChoseManual = userChoseManual)) {
-                                                    viewModel.startAutoSignIn(context, isSessionExpiredTransition = uiState.isSessionActive)
-                                                } else if (!hasSavedCreds && !userChoseManual) {
-                                                    showSignInSheet = true
-                                                }
-
-                                                // Inject 1.3 capture listener
-                                                view.evaluateJavascript(
-                                                    """
-                                                    (function() {
-                                                        if (location.origin !== 'https://portal.aiub.edu') return;
-                                                        if (window.uniTrackCaptured) return;
-                                                        var u = document.querySelector('input[name="UserName"]');
-                                                        var p = document.querySelector('input[name="Password"]');
-                                                        if (!u || !p) return;
-                                                        var f = u.closest('form');
-                                                        if (!f) return;
-                                                        window.uniTrackCaptured = true;
-                                                        
-                                                        function sendCreds() {
-                                                            var id = u ? u.value : '';
-                                                            var pass = p ? p.value : '';
-                                                            if (id && pass && window.UniTrackBridge) {
-                                                                window.UniTrackBridge.onLoginSubmit(id, pass);
-                                                            }
-                                                        }
-                                                        f.addEventListener('submit', sendCreds, true);
-                                                        var btn = f.querySelector('button[type="submit"], input[type="submit"]');
-                                                        if (btn) btn.addEventListener('click', sendCreds, true);
-                                                    })();
-                                                    """.trimIndent(),
-                                                    null
-                                                )
-                                            }
-                                            PageState.OTHER -> {}
-                                        }
+                                        viewModel.handlePageState(state, currentUrlStr, hasSavedCreds = true, isSheetVisible = false)
                                     }
                                 }, 300)
                             }
@@ -417,72 +338,7 @@ fun PortalScreen(
                     .fillMaxSize()
                     .testTag("portal_webview")
             )
-
-            // Auto sign-in overlay while Running (ONLY when sheet is not visible)
-            if (autoSignInState is AutoSignInState.Running && !showSignInSheet) {
-                val running = autoSignInState as AutoSignInState.Running
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(colors.background.copy(alpha = 0.8f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    GlassCard(modifier = Modifier.padding(24.dp)) {
-                        Column(
-                            modifier = Modifier.padding(20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            CircularProgressIndicator(color = colors.accentCyan)
-                            Text(
-                                text = "Signing in securely...",
-                                style = typography.body,
-                                fontWeight = FontWeight.Bold,
-                                color = colors.textPrimary
-                            )
-                            Text(
-                                text = "Reading captcha... (${running.attempt}/${running.max})",
-                                style = typography.meta,
-                                color = colors.textSecondary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            TextButton(
-                                onClick = { viewModel.cancelAutoSignIn() },
-                                modifier = Modifier.testTag("portal_signin_cancel")
-                            ) {
-                                Text("Cancel", color = colors.statusDanger)
-                            }
-                        }
-                    }
-                }
-            }
         }
-    }
-
-    // First-time Sign In Bottom Sheet
-    if (showSignInSheet) {
-        val isRunning = autoSignInState is AutoSignInState.Running
-        val progressText = if (autoSignInState is AutoSignInState.Running) {
-            val r = autoSignInState as AutoSignInState.Running
-            "Reading captcha... (${r.attempt}/${r.max})"
-        } else null
-        val signInError by viewModel.signInError.collectAsState()
-
-        SignInSheet(
-            isRunning = isRunning,
-            progressText = progressText,
-            errorText = signInError,
-            prefilledStudentId = prefilledStudentId,
-            onSignIn = { id, pass ->
-                viewModel.startAutoSignIn(context, studentId = id, password = pass, isRetry = true)
-            },
-            onCancel = { viewModel.cancelAutoSignIn() },
-            onUseWebsiteLogin = {
-                userChoseManual = true
-                showSignInSheet = false
-            },
-            onDismiss = { showSignInSheet = false }
-        )
     }
 
     // Download Course Folder Selection Bottom Sheet

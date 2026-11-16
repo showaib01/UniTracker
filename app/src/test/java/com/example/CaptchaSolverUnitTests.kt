@@ -23,4 +23,16 @@ class CaptchaSolverUnitTests {
         assertNull(CaptchaSolver.parseEquation("abc"))
         assertNull(CaptchaSolver.parseEquation(""))
     }
+
+    @Test
+    fun testDecideAnswer() {
+        // Pass 1 high confidence (>= 85)
+        assertEquals(15, CaptchaSolver.decideAnswer(15, 90, 12))
+        // Pass 1 and Pass 2 match
+        assertEquals(20, CaptchaSolver.decideAnswer(20, 60, 20))
+        // Pass 1 low confidence and does not match pass 2
+        assertNull(CaptchaSolver.decideAnswer(10, 50, 12))
+        // Pass 1 null
+        assertNull(CaptchaSolver.decideAnswer(null, 90, 15))
+    }
 }

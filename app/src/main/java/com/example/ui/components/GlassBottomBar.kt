@@ -30,7 +30,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,13 +37,6 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.navigation.Screen
 import com.example.ui.theme.CyanGlow
 import com.example.ui.theme.UniTrackTheme
-
-data class BottomNavItem(
-    val route: String,
-    val titleRes: Int,
-    val icon: ImageVector,
-    val labelText: String
-)
 
 /**
  * GlassBottomBar:
@@ -81,7 +73,6 @@ fun GlassBottomBar(
                 .clip(RoundedCornerShape(24.dp))
                 .background(colors.cardFill)
                 .drawBehind {
-                    // Subtle top-to-bottom white gradient overlay
                     drawRect(
                         brush = Brush.verticalGradient(
                             colors = listOf(
@@ -158,7 +149,6 @@ fun GlassBottomBar(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // Glow dot indicator for active tab
                     if (selected) {
                         Box(
                             modifier = Modifier

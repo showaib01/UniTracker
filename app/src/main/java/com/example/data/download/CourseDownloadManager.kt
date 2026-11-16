@@ -17,12 +17,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
-import java.util.concurrent.TimeUnit
 
 data class DownloadProgressInfo(
     val url: String,
@@ -35,10 +33,7 @@ data class DownloadProgressInfo(
 object CourseDownloadManager {
 
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
+    private val client = PortalAuth.baseClient
 
     private val _activeDownloads = MutableStateFlow<Map<String, DownloadProgressInfo>>(emptyMap())
     val activeDownloads: StateFlow<Map<String, DownloadProgressInfo>> = _activeDownloads.asStateFlow()

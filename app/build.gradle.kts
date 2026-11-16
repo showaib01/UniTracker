@@ -6,7 +6,7 @@ plugins {
 
 android {
   namespace = "com.example"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.aistudio.applet.mvgxaq"
@@ -16,12 +16,16 @@ android {
     versionName = "1.0.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    ndk {
+      abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+    }
   }
 
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
     debug {
@@ -64,10 +68,9 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation("org.jsoup:jsoup:1.18.3")
   implementation("androidx.security:security-crypto:1.1.0-alpha06")
-  implementation("cz.adaptech.tesseract4android:tesseract4android:4.7.0")
+  implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.kotlinx.coroutines.android)
-  implementation(libs.kotlinx.coroutines.core)
   implementation(libs.okhttp)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

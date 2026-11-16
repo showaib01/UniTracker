@@ -13,7 +13,7 @@ import java.io.InputStream
 object CaptchaSolver {
 
     private const val CONFIDENCE_THRESHOLD = 55
-    private const val MIN_INK_COUNT = 80
+    private const val MIN_INK_COUNT = 100
     private const val MIN_BLOB_SIZE = 5
     private const val UPSCALE_SCALE = 4
     private const val MIN_ASSET_SIZE_BYTES = 5 * 1024 * 1024L
@@ -102,7 +102,7 @@ object CaptchaSolver {
         val r = Color.red(p)
         val g = Color.green(p)
         val b = Color.blue(p)
-        return b > 120 && b > r + 15 && b > g + 15
+        return b > 200 && r < 60 && g < 60
     }
 
     fun solve(context: Context, bitmap: Bitmap): Int? {
@@ -132,13 +132,18 @@ object CaptchaSolver {
                 val conf = api.meanConfidence()
                 val ans = parseEquation(text)
                 if (BuildConfig.DEBUG) {
-                    UniTrackLogger.d("CaptchaSolver [Fallback]: pass=0, conf=$conf, text='$text', ans=$ans")
+                    UniTrackLogger.d("CaptchaSolver [Fallback]: conf=$conf, text='$text', ans=$ans")
                 }
                 return if (conf >= CONFIDENCE_THRESHOLD && ans != null) ans else null
             }
         }
 
-        val despeckled = despeckle(pixels, w, h)
+        val ink = BooleanArray(w * h)
+        for (i in pixels.indices) {
+            ink[i] = isBlueInk(pixels[i])
+        }
+
+        val despeckled = despeckle(ink, w, h, minBlobSize = MIN_BLOB_SIZE)
         val pass1Bmp = processPass1(despeckled, w, h)
         val pass2Bmp = processPass2(despeckled, w, h)
 
@@ -156,10 +161,6 @@ object CaptchaSolver {
                 UniTrackLogger.d("CaptchaSolver: pass=1, conf=$conf1, text='$text1', ans=$ans1")
             }
 
-            if (conf1 >= CONFIDENCE_THRESHOLD && ans1 != null) {
-                return ans1
-            }
-
             api.setImage(pass2Bmp)
             val text2 = api.utF8Text ?: ""
             val conf2 = api.meanConfidence()
@@ -169,41 +170,35 @@ object CaptchaSolver {
                 UniTrackLogger.d("CaptchaSolver: pass=2, conf=$conf2, text='$text2', ans=$ans2")
             }
 
-            if (ans1 != null && ans1 == ans2) {
-                return ans1
-            }
-
-            if (ans2 != null && conf2 >= CONFIDENCE_THRESHOLD) {
-                return ans2
-            }
-
-            if (ans1 != null && conf1 >= 40) {
-                return ans1
-            }
+            return decideAnswer(ans1, conf1, ans2)
         }
+    }
 
+    fun decideAnswer(a1: Int?, c1: Int, a2: Int?): Int? {
+        if (a1 != null && c1 >= 85) return a1
+        if (a1 != null && a1 == a2) return a1
         return null
     }
 
-    private fun despeckle(pixels: IntArray, w: Int, h: Int): BooleanArray {
-        val ink = BooleanArray(w * h)
-        for (i in pixels.indices) {
-            ink[i] = isBlueInk(pixels[i])
-        }
-
+    private fun despeckle(ink: BooleanArray, w: Int, h: Int, minBlobSize: Int): BooleanArray {
         val visited = BooleanArray(w * h)
+        val queue = IntArray(w * h)
+        val component = IntArray(w * h)
+
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val idx = y * w + x
                 if (ink[idx] && !visited[idx]) {
-                    val component = mutableListOf<Int>()
-                    val queue = mutableListOf(idx)
+                    var head = 0
+                    var tail = 0
+                    queue[tail++] = idx
                     visited[idx] = true
 
-                    var head = 0
-                    while (head < queue.size) {
+                    var compSize = 0
+                    component[compSize++] = idx
+
+                    while (head < tail) {
                         val curr = queue[head++]
-                        component.add(curr)
                         val cx = curr % w
                         val cy = curr / w
 
@@ -216,16 +211,17 @@ object CaptchaSolver {
                                     val nIdx = ny * w + nx
                                     if (ink[nIdx] && !visited[nIdx]) {
                                         visited[nIdx] = true
-                                        queue.add(nIdx)
+                                        queue[tail++] = nIdx
+                                        component[compSize++] = nIdx
                                     }
                                 }
                             }
                         }
                     }
 
-                    if (component.size < MIN_BLOB_SIZE) {
-                        for (cIdx in component) {
-                            ink[cIdx] = false
+                    if (compSize < minBlobSize) {
+                        for (i in 0 until compSize) {
+                            ink[component[i]] = false
                         }
                     }
                 }
@@ -240,15 +236,11 @@ object CaptchaSolver {
             for (x in 0 until w) {
                 if (src[y * w + x]) {
                     for (r in -radius..radius) {
-                        // Horizontal
                         val hx = x + r
                         if (hx in 0 until w) out[y * w + hx] = true
-                        // Vertical
                         val vy = y + r
                         if (vy in 0 until h) out[vy * w + x] = true
-                        // Main diagonal
                         if (hx in 0 until w && vy in 0 until h) out[vy * w + hx] = true
-                        // Anti-diagonal
                         val ay = y - r
                         if (hx in 0 until w && ay in 0 until h) out[ay * w + hx] = true
                     }
@@ -259,12 +251,11 @@ object CaptchaSolver {
     }
 
     private fun processPass1(ink: BooleanArray, w: Int, h: Int): Bitmap {
-        val dilated = directionalDilate(ink, w, h, radius = 1)
+        val dilated = directionalDilate(ink, w, h, radius = 2)
         return nearestNeighborUpscale(dilated, w, h, scale = UPSCALE_SCALE)
     }
 
     private fun processPass2(ink: BooleanArray, w: Int, h: Int): Bitmap {
-        // Plus-shaped close: dilate arm 1, then keep pixels whose 4-connected neighbors are also set
         val dilatedArm1 = directionalDilate(ink, w, h, radius = 1)
         val closed = BooleanArray(w * h)
         for (y in 0 until h) {
@@ -292,7 +283,9 @@ object CaptchaSolver {
             val lum = (0.299 * Color.red(p) + 0.587 * Color.green(p) + 0.114 * Color.blue(p)).toInt()
             bw[i] = lum <= 150
         }
-        return nearestNeighborUpscale(bw, w, h, scale = UPSCALE_SCALE)
+        val despeckled = despeckle(bw, w, h, minBlobSize = 50)
+        val dilated = directionalDilate(despeckled, w, h, radius = 8)
+        return nearestNeighborUpscale(dilated, w, h, scale = 4)
     }
 
     private fun nearestNeighborUpscale(src: BooleanArray, w: Int, h: Int, scale: Int): Bitmap {

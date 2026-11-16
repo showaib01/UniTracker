@@ -113,7 +113,7 @@ object PortalAuth {
 
     private val loginMutex = Mutex()
     private val cookieJar = InMemoryCookieJar()
-    private val client = OkHttpClient.Builder()
+    val baseClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)
@@ -152,14 +152,24 @@ object PortalAuth {
         context: Context,
         username: String,
         password: String,
+        manualCaptcha: (suspend (image: Bitmap, refresh: suspend () -> Bitmap?) -> String?)? = null,
         onProgress: (attempt: Int, max: Int) -> Unit = { _, _ -> }
     ): LoginResult = withContext(Dispatchers.IO) {
-        val result = withTimeoutOrNull(OVERALL_TIMEOUT_MS) {
+        val autoResult = withTimeoutOrNull(OVERALL_TIMEOUT_MS) {
             loginMutex.withLock {
                 executeLogin(context, username, password, onProgress)
             }
         }
-        result ?: LoginResult.CaptchaFailed
+        if (autoResult != null && autoResult !is LoginResult.CaptchaFailed && autoResult !is LoginResult.Cancelled) {
+            return@withContext autoResult
+        }
+        if (manualCaptcha != null) {
+            loginMutex.withLock {
+                executeLoginManual(context, username, password, manualCaptcha)
+            }
+        } else {
+            autoResult ?: LoginResult.CaptchaFailed
+        }
     }
 
     private suspend fun executeLogin(
@@ -193,13 +203,12 @@ object PortalAuth {
             submissionAttempts++
 
             try {
-                // Step 1: GET "/"
                 val getReq = Request.Builder()
                     .url(BASE)
                     .header("User-Agent", DESKTOP_USER_AGENT)
                     .build()
 
-                val getResp = client.newCall(getReq).await()
+                val getResp = baseClient.newCall(getReq).await()
                 val html = getResp.body?.string() ?: ""
                 getResp.close()
 
@@ -217,7 +226,6 @@ object PortalAuth {
                         totalSolverAttempts++
                         onProgress(totalSolverAttempts, MAX_SOLVER_ATTEMPTS)
 
-                        // Step 2: GET captcha image
                         val imgReq = Request.Builder()
                             .url("$BASE/DefaultCaptcha/Generate?t=$captchaToken")
                             .header("User-Agent", DESKTOP_USER_AGENT)
@@ -225,7 +233,7 @@ object PortalAuth {
                             .header("Accept", "image/*")
                             .build()
 
-                        val imgResp = client.newCall(imgReq).await()
+                        val imgResp = baseClient.newCall(imgReq).await()
                         val bytes = imgResp.body?.bytes()
                         imgResp.close()
 
@@ -240,7 +248,6 @@ object PortalAuth {
                         if (solved == null) {
                             if (totalSolverAttempts >= MAX_SOLVER_ATTEMPTS) break
 
-                            // Step 4: Refresh captcha
                             val refreshBody = FormBody.Builder()
                                 .add("t", captchaToken)
                                 .add("__m__", "0")
@@ -255,7 +262,7 @@ object PortalAuth {
                                 .build()
 
                             try {
-                                val refResp = client.newCall(refreshReq).await()
+                                val refResp = baseClient.newCall(refreshReq).await()
                                 val refScript = refResp.body?.string() ?: ""
                                 refResp.close()
 
@@ -272,11 +279,6 @@ object PortalAuth {
                         }
 
                         UniTrackLogger.d("PortalAuth: Solver attempt $totalSolverAttempts -> ${if (solved != null) "solved" else "failed"}, refreshed=$refreshSuccess")
-
-                        if (solved == null && totalSolverAttempts % 5 == 0 && submissionAttempts < MAX_SUBMISSIONS) {
-                            UniTrackLogger.d("PortalAuth: 5 solver attempts reached on current page token, re-fetching GET '/'...")
-                            break
-                        }
                     }
 
                     if (solved == null) {
@@ -287,7 +289,6 @@ object PortalAuth {
 
                 currentCoroutineContext().ensureActive()
 
-                // Step 5: Submit form
                 val formBuilder = FormBody.Builder()
                     .add("__RequestVerificationToken", verificationToken)
                     .add("UserName", username)
@@ -303,13 +304,12 @@ object PortalAuth {
                     .header("Referer", "$BASE/")
                     .build()
 
-                val postResp = client.newCall(postReq).await()
+                val postResp = baseClient.newCall(postReq).await()
                 val finalUrl = postResp.request.url.toString()
                 val finalPath = postResp.request.url.encodedPath
                 val respHtml = postResp.body?.string() ?: ""
                 postResp.close()
 
-                // Step 6: Success check
                 if (finalUrl.contains("/Student", ignoreCase = true) || respHtml.contains("/Login/Logout", ignoreCase = true)) {
                     UniTrackLogger.d("PortalAuth: POST success -> final path='$finalPath'")
                     return LoginResult.Success(finalUrl)
@@ -323,7 +323,6 @@ object PortalAuth {
 
                 when (classifiedError) {
                     LoginErrorType.CAPTCHA -> {
-                        // Re-submit allowed ONLY for captcha error
                         continue
                     }
                     LoginErrorType.LOCKED -> {
@@ -333,7 +332,6 @@ object PortalAuth {
                         return LoginResult.WrongCredentials
                     }
                     LoginErrorType.UNKNOWN -> {
-                        // ANY other outcome, including empty error text -> NetworkError immediately
                         return LoginResult.NetworkError("Unexpected response")
                     }
                 }
@@ -345,6 +343,114 @@ object PortalAuth {
         }
 
         return LoginResult.CaptchaFailed
+    }
+
+    private suspend fun executeLoginManual(
+        context: Context,
+        username: String,
+        password: String,
+        manualCaptcha: suspend (image: Bitmap, refresh: suspend () -> Bitmap?) -> String?
+    ): LoginResult {
+        try {
+            val getReq = Request.Builder()
+                .url(BASE)
+                .header("User-Agent", DESKTOP_USER_AGENT)
+                .build()
+
+            val getResp = baseClient.newCall(getReq).await()
+            val html = getResp.body?.string() ?: ""
+            getResp.close()
+
+            val (verificationToken, initialCaptchaToken) = parseLoginPage(html)
+            var captchaToken = initialCaptchaToken
+
+            val refreshLambda: suspend () -> Bitmap? = {
+                val refreshBody = FormBody.Builder()
+                    .add("t", captchaToken)
+                    .add("__m__", "0")
+                    .build()
+                val refreshReq = Request.Builder()
+                    .url("$BASE/DefaultCaptcha/Refresh")
+                    .post(refreshBody)
+                    .header("User-Agent", DESKTOP_USER_AGENT)
+                    .header("Referer", "$BASE/")
+                    .header("X-Requested-With", "XMLHttpRequest")
+                    .build()
+                try {
+                    val refResp = baseClient.newCall(refreshReq).await()
+                    val refScript = refResp.body?.string() ?: ""
+                    refResp.close()
+                    val newToken = parseRefreshToken(refScript)
+                    if (!newToken.isNullOrBlank()) {
+                        captchaToken = newToken
+                        val imgReq = Request.Builder()
+                            .url("$BASE/DefaultCaptcha/Generate?t=$captchaToken")
+                            .header("User-Agent", DESKTOP_USER_AGENT)
+                            .header("Referer", "$BASE/")
+                            .header("Accept", "image/*")
+                            .build()
+                        val imgResp = baseClient.newCall(imgReq).await()
+                        val bytes = imgResp.body?.bytes()
+                        imgResp.close()
+                        if (bytes != null && bytes.isNotEmpty()) decodeGifToBitmap(bytes) else null
+                    } else null
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+            val imgReq = Request.Builder()
+                .url("$BASE/DefaultCaptcha/Generate?t=$captchaToken")
+                .header("User-Agent", DESKTOP_USER_AGENT)
+                .header("Referer", "$BASE/")
+                .header("Accept", "image/*")
+                .build()
+
+            val imgResp = baseClient.newCall(imgReq).await()
+            val bytes = imgResp.body?.bytes()
+            imgResp.close()
+
+            val bitmap = if (bytes != null && bytes.isNotEmpty()) decodeGifToBitmap(bytes) else null
+            if (bitmap == null) return LoginResult.CaptchaFailed
+
+            val captchaAns = manualCaptcha(bitmap, refreshLambda) ?: return LoginResult.Cancelled
+
+            val formBuilder = FormBody.Builder()
+                .add("__RequestVerificationToken", verificationToken)
+                .add("UserName", username)
+                .add("Password", password)
+                .add("fingerPrint", "-")
+                .add("CaptchaDeText", captchaToken)
+                .add("CaptchaInputText", captchaAns)
+
+            val postReq = Request.Builder()
+                .url(BASE)
+                .post(formBuilder.build())
+                .header("User-Agent", DESKTOP_USER_AGENT)
+                .header("Referer", "$BASE/")
+                .build()
+
+            val postResp = baseClient.newCall(postReq).await()
+            val finalUrl = postResp.request.url.toString()
+            val respHtml = postResp.body?.string() ?: ""
+            postResp.close()
+
+            if (finalUrl.contains("/Student", ignoreCase = true) || respHtml.contains("/Login/Logout", ignoreCase = true)) {
+                return LoginResult.Success(finalUrl)
+            }
+
+            val errDoc = Jsoup.parse(respHtml)
+            val summaryErr = errDoc.select(".validation-summary-errors, .field-validation-error").text()
+            val classifiedError = classifyLoginError(summaryErr)
+            return when (classifiedError) {
+                LoginErrorType.CAPTCHA -> LoginResult.CaptchaFailed
+                LoginErrorType.LOCKED -> LoginResult.Locked
+                LoginErrorType.WRONG_CREDENTIALS -> LoginResult.WrongCredentials
+                else -> LoginResult.NetworkError("Unexpected response")
+            }
+        } catch (e: Exception) {
+            return LoginResult.NetworkError(e.message ?: "Unknown error")
+        }
     }
 
     private fun decodeGifToBitmap(bytes: ByteArray): Bitmap? {

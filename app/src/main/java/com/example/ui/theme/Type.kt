@@ -10,13 +10,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
-// Bundled Inter font family with Bengali fallback support
+// Bundled Inter font family
 val InterFontFamily = FontFamily(
     Font(R.font.inter, FontWeight.Normal)
-)
-
-val NotoSansBengaliFontFamily = FontFamily(
-    Font(R.font.noto_sans_bengali, FontWeight.Normal)
 )
 
 // Legacy alias

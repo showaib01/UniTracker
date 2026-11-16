@@ -11,7 +11,6 @@ import com.example.data.local.dao.CourseItemDao
 import com.example.data.local.dao.CourseSettingDao
 import com.example.data.local.dao.DownloadedFileDao
 import com.example.data.local.dao.NoticeDao
-import com.example.data.local.dao.ResultDao
 import com.example.data.local.dao.RoutineDao
 import com.example.data.local.dao.TaskDao
 import com.example.data.local.entity.CapturedPageEntity
@@ -20,13 +19,11 @@ import com.example.data.local.entity.CourseItemEntity
 import com.example.data.local.entity.CourseSettingEntity
 import com.example.data.local.entity.DownloadedFileEntity
 import com.example.data.local.entity.NoticeEntity
-import com.example.data.local.entity.ResultEntity
 import com.example.data.local.entity.TaskEntity
 
 @Database(
     entities = [
         ClassRoutineEntity::class,
-        ResultEntity::class,
         NoticeEntity::class,
         TaskEntity::class,
         CapturedPageEntity::class,
@@ -34,13 +31,12 @@ import com.example.data.local.entity.TaskEntity
         CourseItemEntity::class,
         DownloadedFileEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class UniTrackDatabase : RoomDatabase() {
 
     abstract fun routineDao(): RoutineDao
-    abstract fun resultDao(): ResultDao
     abstract fun noticeDao(): NoticeDao
     abstract fun taskDao(): TaskDao
     abstract fun capturedPageDao(): CapturedPageDao
@@ -90,7 +86,6 @@ abstract class UniTrackDatabase : RoomDatabase() {
                     )
                 """.trimIndent())
 
-                // Safely migrate existing tasks from student_tasks table if it exists
                 db.execSQL("""
                     INSERT INTO `course_items` (
                         `id`, `courseKey`, `courseName`, `section`, `type`, `title`, 
@@ -163,6 +158,12 @@ abstract class UniTrackDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `results`")
+            }
+        }
+
         fun getDatabase(context: Context): UniTrackDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -170,7 +171,7 @@ abstract class UniTrackDatabase : RoomDatabase() {
                     UniTrackDatabase::class.java,
                     "unitrack_aiub.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                 INSTANCE = instance
                 instance
