@@ -13,11 +13,11 @@ object PortalSelectorConfig {
     fun classifyPage(domResult: String, url: String): PageState {
         val cleanDom = domResult.replace("\"", "").trim()
         val path = try { java.net.URI(url).path ?: "" } catch (_: Exception) { "" }
-        if (cleanDom.equals("app", ignoreCase = true) || path.startsWith("/Student", ignoreCase = true)) {
-            return PageState.APP
-        }
         if (cleanDom.equals("login", ignoreCase = true)) {
             return PageState.LOGIN
+        }
+        if (cleanDom.equals("app", ignoreCase = true) || path.startsWith("/Student", ignoreCase = true)) {
+            return PageState.APP
         }
         return PageState.OTHER
     }

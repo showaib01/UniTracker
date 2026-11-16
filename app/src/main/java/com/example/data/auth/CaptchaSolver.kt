@@ -21,6 +21,8 @@ object CaptchaSolver {
     private var tessApi: TessBaseAPI? = null
     private var initFailed = false
 
+    var debugBitmapSink: ((String, Bitmap) -> Unit)? = null
+
     @Synchronized
     private fun getTessApi(context: Context): TessBaseAPI? {
         if (initFailed) return null
@@ -99,6 +101,10 @@ object CaptchaSolver {
     fun solve(context: Context, bitmap: Bitmap): Int? {
         val api = getTessApi(context) ?: return null
 
+        if (BuildConfig.DEBUG) {
+            debugBitmapSink?.invoke("captcha_last_raw.png", bitmap)
+        }
+
         val w = bitmap.width
         val h = bitmap.height
         val pixels = IntArray(w * h)
@@ -131,6 +137,10 @@ object CaptchaSolver {
         val despeckled = despeckle(pixels, w, h)
         val pass1Bmp = processPass1(despeckled, w, h)
         val pass2Bmp = processPass2(despeckled, w, h)
+
+        if (BuildConfig.DEBUG) {
+            debugBitmapSink?.invoke("captcha_last_pass1.png", pass1Bmp)
+        }
 
         synchronized(this) {
             api.setImage(pass1Bmp)

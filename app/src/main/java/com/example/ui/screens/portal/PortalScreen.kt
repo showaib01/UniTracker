@@ -58,7 +58,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,7 +72,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
 import com.example.data.auth.CredentialStore
-import com.example.data.auth.LoginResult
 import com.example.data.auth.PortalAuth
 import com.example.data.download.CourseDownloadManager
 import com.example.data.local.entity.CourseSettingEntity
@@ -83,7 +81,6 @@ import com.example.ui.components.GlassCard
 import com.example.ui.theme.UniTrackTheme
 import com.example.util.UniTrackLogger
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 
@@ -99,10 +96,13 @@ private class PortalWebAppBridge(
 ) {
     @JavascriptInterface
     fun onLoginSubmit(id: String, pass: String) {
-        val webView = PortalWebViewHolder.getWebView()
-        val currentUrl = webView?.url ?: ""
-        if (currentUrl.startsWith("https://portal.aiub.edu", ignoreCase = true)) {
-            viewModel.onCredentialsCaptured(id, pass)
+        try {
+            val currentUrl = viewModel.uiState.value.currentUrl
+            if (currentUrl.startsWith("https://portal.aiub.edu", ignoreCase = true)) {
+                viewModel.onCredentialsCaptured(id, pass)
+            }
+        } catch (_: Throwable) {
+            // Safe bridge guard
         }
     }
 }
@@ -117,7 +117,6 @@ fun PortalScreen(
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as com.example.UniTrackApplication
-    val scope = rememberCoroutineScope()
     val colors = UniTrackTheme.colors
     val typography = UniTrackTheme.typography
     val uiState by viewModel.uiState.collectAsState()
@@ -148,60 +147,58 @@ fun PortalScreen(
     var userChoseManual by remember { mutableStateOf(false) }
     var prefilledStudentId by remember { mutableStateOf(uiState.studentId) }
 
-    fun triggerAutoSignIn(isRetry: Boolean = false) {
-        viewModel.startAutoSignIn(
-            context = context,
-            isRetry = isRetry,
-            onSuccess = { landingUrl ->
-                val cookieManager = CookieManager.getInstance()
-                val webView = PortalWebViewHolder.getWebView()
-                for (cookieStr in PortalAuth.cookiesForWebView()) {
-                    cookieManager.setCookie("https://portal.aiub.edu", "$cookieStr; Path=/")
-                }
-                if (webView != null) {
-                    cookieManager.setAcceptThirdPartyCookies(webView, true)
-                }
-                cookieManager.flush()
-                webView?.loadUrl(landingUrl)
-            },
-            onWrongCredentials = { id ->
-                prefilledStudentId = id
-                showSignInSheet = true
-                Toast.makeText(context, "Saved login was wrong, please sign in again", Toast.LENGTH_LONG).show()
-            },
-            onManualRequired = { _ ->
-                val creds = CredentialStore(context).load()
-                if (creds != null) {
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is PortalEvent.SignedIn -> {
+                    val cookieManager = CookieManager.getInstance()
                     val webView = PortalWebViewHolder.getWebView()
-                    val idJson = JSONObject.quote(creds.first)
-                    val passJson = JSONObject.quote(creds.second)
-                    webView?.evaluateJavascript(
-                        """
-                        (function() {
-                            var u = document.querySelector('input[name="UserName"]');
-                            var p = document.querySelector('input[name="Password"]');
-                            if (u) { u.value = $idJson; u.dispatchEvent(new Event('input', {bubbles:true})); u.dispatchEvent(new Event('change', {bubbles:true})); }
-                            if (p) { p.value = $passJson; p.dispatchEvent(new Event('input', {bubbles:true})); p.dispatchEvent(new Event('change', {bubbles:true})); }
-                            var c = document.querySelector('#CaptchaInputText');
-                            if (c) c.focus();
-                        })();
-                        """.trimIndent(),
-                        null
-                    )
+                    for (cookieStr in PortalAuth.cookiesForWebView()) {
+                        cookieManager.setCookie("https://portal.aiub.edu", "$cookieStr; Path=/")
+                    }
+                    if (webView != null) {
+                        cookieManager.setAcceptThirdPartyCookies(webView, true)
+                    }
+                    cookieManager.flush()
+                    webView?.loadUrl(event.landingUrl)
+                    showSignInSheet = false
                 }
+                is PortalEvent.WrongCredentials -> {
+                    prefilledStudentId = event.studentId
+                    showSignInSheet = true
+                }
+                is PortalEvent.ManualRequired -> {
+                    val creds = CredentialStore(context).load()
+                    if (creds != null) {
+                        val webView = PortalWebViewHolder.getWebView()
+                        val idJson = JSONObject.quote(creds.first)
+                        val passJson = JSONObject.quote(creds.second)
+                        webView?.evaluateJavascript(
+                            """
+                            (function() {
+                                var u = document.querySelector('input[name="UserName"]');
+                                var p = document.querySelector('input[name="Password"]');
+                                if (u) { u.value = $idJson; u.dispatchEvent(new Event('input', {bubbles:true})); u.dispatchEvent(new Event('change', {bubbles:true})); }
+                                if (p) { p.value = $passJson; p.dispatchEvent(new Event('input', {bubbles:true})); p.dispatchEvent(new Event('change', {bubbles:true})); }
+                                var c = document.querySelector('#CaptchaInputText');
+                                if (c) c.focus();
+                            })();
+                            """.trimIndent(),
+                            null
+                        )
+                    }
 
-                scope.launch {
                     val snackResult = snackbarHostState.showSnackbar(
                         message = "Couldn't read the captcha automatically. Type it yourself or tap Retry.",
                         actionLabel = "Retry",
                         duration = SnackbarDuration.Long
                     )
                     if (snackResult == SnackbarResult.ActionPerformed) {
-                        triggerAutoSignIn(isRetry = true)
+                        viewModel.startAutoSignIn(context, isRetry = true)
                     }
                 }
             }
-        )
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -340,24 +337,27 @@ fun PortalScreen(
                                         val clean = rawJson?.replace("\"", "")?.trim() ?: "other"
                                         val state = PortalSelectorConfig.classifyPage(clean, currentUrlStr)
 
-                                        viewModel.handlePageState(state, currentUrlStr)
+                                        val credStore = CredentialStore(context)
+                                        val hasSavedCreds = credStore.hasCredentials()
+
+                                        viewModel.handlePageState(state, currentUrlStr, hasSavedCreds, showSignInSheet)
 
                                         when (state) {
                                             PageState.APP -> {
                                                 showSignInSheet = false
                                             }
                                             PageState.LOGIN -> {
-                                                val credStore = CredentialStore(context)
-                                                if (credStore.hasCredentials() && autoSignInState !is AutoSignInState.Running && !userChoseManual) {
-                                                    triggerAutoSignIn()
-                                                } else if (!credStore.hasCredentials() && !userChoseManual) {
+                                                if (viewModel.canStartAutoAttempt(hasSavedCreds, isRetry = false, isSessionExpiredTransition = uiState.isSessionActive, userChoseManual = userChoseManual)) {
+                                                    viewModel.startAutoSignIn(context, isSessionExpiredTransition = uiState.isSessionActive)
+                                                } else if (!hasSavedCreds && !userChoseManual) {
                                                     showSignInSheet = true
                                                 }
 
-                                                // Inject 1.2 capture listener
+                                                // Inject 1.3 capture listener
                                                 view.evaluateJavascript(
                                                     """
                                                     (function() {
+                                                        if (location.origin !== 'https://portal.aiub.edu') return;
                                                         if (window.uniTrackCaptured) return;
                                                         var u = document.querySelector('input[name="UserName"]');
                                                         var p = document.querySelector('input[name="Password"]');
@@ -414,8 +414,8 @@ fun PortalScreen(
                     .testTag("portal_webview")
             )
 
-            // Auto sign-in overlay while Running
-            if (autoSignInState is AutoSignInState.Running) {
+            // Auto sign-in overlay while Running (ONLY when sheet is not visible)
+            if (autoSignInState is AutoSignInState.Running && !showSignInSheet) {
                 val running = autoSignInState as AutoSignInState.Running
                 Box(
                     modifier = Modifier
@@ -456,15 +456,28 @@ fun PortalScreen(
     }
 
     // First-time Sign In Bottom Sheet
-    if (showSignInSheet && autoSignInState !is AutoSignInState.Running) {
+    if (showSignInSheet) {
+        val isRunning = autoSignInState is AutoSignInState.Running
+        val progressText = if (autoSignInState is AutoSignInState.Running) {
+            val r = autoSignInState as AutoSignInState.Running
+            "Reading captcha... (${r.attempt}/${r.max})"
+        } else null
+        val signInError by viewModel.signInError.collectAsState()
+
         SignInSheet(
-            onDismiss = { showSignInSheet = false },
+            isRunning = isRunning,
+            progressText = progressText,
+            errorText = signInError,
+            prefilledStudentId = prefilledStudentId,
+            onSignIn = { id, pass ->
+                viewModel.startAutoSignIn(context, studentId = id, password = pass, isRetry = true)
+            },
+            onCancel = { viewModel.cancelAutoSignIn() },
             onUseWebsiteLogin = {
                 userChoseManual = true
                 showSignInSheet = false
             },
-            viewModel = viewModel,
-            prefilledStudentId = prefilledStudentId
+            onDismiss = { showSignInSheet = false }
         )
     }
 

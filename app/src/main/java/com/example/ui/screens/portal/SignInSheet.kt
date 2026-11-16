@@ -1,8 +1,5 @@
 package com.example.ui.screens.portal
 
-import android.webkit.CookieManager
-import android.webkit.WebView
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,50 +24,42 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.example.UniTrackApplication
-import com.example.data.auth.CredentialStore
-import com.example.data.auth.LoginResult
-import com.example.data.auth.PortalAuth
 import com.example.ui.theme.UniTrackTheme
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignInSheet(
-    onDismiss: () -> Unit,
+    isRunning: Boolean,
+    progressText: String?,
+    errorText: String?,
+    prefilledStudentId: String,
+    onSignIn: (id: String, password: String) -> Unit,
+    onCancel: () -> Unit,
     onUseWebsiteLogin: () -> Unit,
-    viewModel: PortalViewModel,
-    prefilledStudentId: String = "",
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val app = context.applicationContext as UniTrackApplication
-    val prefsRepo = app.preferencesRepository
     val colors = UniTrackTheme.colors
     val typography = UniTrackTheme.typography
 
-    var studentId by remember { mutableStateOf(prefilledStudentId) }
+    var studentId by remember(prefilledStudentId) { mutableStateOf(prefilledStudentId) }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var inlineError by remember { mutableStateOf<String?>(null) }
+    var validationError by remember { mutableStateOf<String?>(null) }
 
-    val autoState by viewModel.autoSignInState.collectAsState()
+    val displayError = errorText ?: validationError
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -91,9 +80,9 @@ fun SignInSheet(
                 color = colors.textPrimary
             )
 
-            if (inlineError != null) {
+            if (displayError != null) {
                 Text(
-                    text = inlineError!!,
+                    text = displayError,
                     style = typography.meta,
                     color = colors.statusDanger,
                     fontWeight = FontWeight.SemiBold
@@ -104,11 +93,12 @@ fun SignInSheet(
                 value = studentId,
                 onValueChange = {
                     studentId = it
-                    inlineError = null
+                    validationError = null
                 },
                 label = { Text("Student ID", color = colors.textSecondary) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                enabled = !isRunning,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = colors.accentCyan,
                     unfocusedBorderColor = colors.cardBorder,
@@ -124,10 +114,11 @@ fun SignInSheet(
                 value = password,
                 onValueChange = {
                     password = it
-                    inlineError = null
+                    validationError = null
                 },
                 label = { Text("Password", color = colors.textSecondary) },
                 singleLine = true,
+                enabled = !isRunning,
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -149,90 +140,54 @@ fun SignInSheet(
                     .testTag("signin_password")
             )
 
-            when (val state = autoState) {
-                is AutoSignInState.Running -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+            if (isRunning) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(color = colors.accentCyan)
+                        Text(
+                            text = progressText ?: "Signing in...",
+                            style = typography.body,
+                            color = colors.textPrimary
+                        )
+                    }
+                    TextButton(
+                        onClick = onCancel,
+                        modifier = Modifier.testTag("portal_signin_cancel")
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CircularProgressIndicator(color = colors.accentCyan)
-                            Text(
-                                text = "Reading captcha... (${state.attempt}/${state.max})",
-                                style = typography.body,
-                                color = colors.textPrimary
-                            )
-                        }
-                        TextButton(
-                            onClick = { viewModel.cancelAutoSignIn() },
-                            modifier = Modifier.testTag("portal_signin_cancel")
-                        ) {
-                            Text("Cancel", color = colors.statusDanger)
-                        }
+                        Text("Cancel", color = colors.statusDanger)
                     }
                 }
-                else -> {
-                    Button(
-                        onClick = {
-                            if (studentId.isBlank() || password.isBlank()) {
-                                inlineError = "Please fill in both Student ID and Password."
-                                return@Button
-                            }
-                            inlineError = null
-                            viewModel.startAutoSignIn(
-                                context = context,
-                                studentId = studentId,
-                                password = password,
-                                isRetry = true,
-                                onSuccess = { landingUrl ->
-                                    scope.launch {
-                                        CredentialStore(context).save(studentId, password)
-                                        prefsRepo.updateStudentId(studentId, true)
+            } else {
+                Button(
+                    onClick = {
+                        if (studentId.isBlank() || password.isBlank()) {
+                            validationError = "Please fill in both Student ID and Password."
+                            return@Button
+                        }
+                        validationError = null
+                        onSignIn(studentId, password)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accentCyan,
+                        contentColor = colors.background
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("signin_submit")
+                ) {
+                    Text("Sign in", fontWeight = FontWeight.Bold)
+                }
 
-                                        val cookieManager = CookieManager.getInstance()
-                                        val webView = PortalWebViewHolder.getWebView()
-                                        for (cookieStr in PortalAuth.cookiesForWebView()) {
-                                            cookieManager.setCookie("https://portal.aiub.edu", "$cookieStr; Path=/")
-                                        }
-                                        if (webView != null) {
-                                            cookieManager.setAcceptThirdPartyCookies(webView, true)
-                                        }
-                                        cookieManager.flush()
-                                        webView?.loadUrl(landingUrl)
-                                        onDismiss()
-                                    }
-                                },
-                                onWrongCredentials = {
-                                    inlineError = "Incorrect Student ID or Password."
-                                },
-                                onManualRequired = { result ->
-                                    inlineError = when (result) {
-                                        is LoginResult.Locked -> "Account is locked."
-                                        is LoginResult.NetworkError -> "Network error. Check your connection."
-                                        else -> "Couldn't read the captcha. Tap Sign in to try again."
-                                    }
-                                }
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = colors.accentCyan,
-                            contentColor = colors.background
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("signin_submit")
-                    ) {
-                        Text("Sign in", fontWeight = FontWeight.Bold)
-                    }
-
-                    TextButton(
-                        onClick = onUseWebsiteLogin,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Use website login instead", color = colors.textSecondary)
-                    }
+                TextButton(
+                    onClick = onUseWebsiteLogin,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Use website login instead", color = colors.textSecondary)
                 }
             }
 

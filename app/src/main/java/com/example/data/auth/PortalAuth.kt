@@ -7,25 +7,34 @@ import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.Movie
 import android.os.Build
+import com.example.BuildConfig
 import com.example.util.UniTrackLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.jsoup.Jsoup
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.nio.ByteBuffer
-import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 enum class LoginErrorType {
     CAPTCHA,
@@ -82,6 +91,18 @@ class InMemoryCookieJar : CookieJar {
     }
 }
 
+private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+    cont.invokeOnCancellation { cancel() }
+    enqueue(object : Callback {
+        override fun onResponse(call: Call, response: Response) {
+            cont.resume(response)
+        }
+        override fun onFailure(call: Call, e: IOException) {
+            if (cont.isActive) cont.resumeWithException(e)
+        }
+    })
+}
+
 object PortalAuth {
     const val DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     private const val BASE = "https://portal.aiub.edu"
@@ -134,15 +155,8 @@ object PortalAuth {
         onProgress: (attempt: Int, max: Int) -> Unit = { _, _ -> }
     ): LoginResult = withContext(Dispatchers.IO) {
         val result = withTimeoutOrNull(OVERALL_TIMEOUT_MS) {
-            try {
-                loginMutex.withLock {
-                    executeLogin(context, username, password, onProgress)
-                }
-            } catch (e: CancellationException) {
-                LoginResult.Cancelled
-            } catch (e: Exception) {
-                UniTrackLogger.e("PortalAuth login exception: ${e.message}", e)
-                LoginResult.NetworkError(e.message ?: "Unknown error")
+            loginMutex.withLock {
+                executeLogin(context, username, password, onProgress)
             }
         }
         result ?: LoginResult.CaptchaFailed
@@ -155,6 +169,21 @@ object PortalAuth {
         onProgress: (attempt: Int, max: Int) -> Unit
     ): LoginResult {
         cookieJar.clear()
+
+        if (BuildConfig.DEBUG) {
+            CaptchaSolver.debugBitmapSink = { fileName, bmp ->
+                try {
+                    val debugDir = context.getExternalFilesDir("debug")
+                    if (debugDir != null) {
+                        if (!debugDir.exists()) debugDir.mkdirs()
+                        val file = File(debugDir, fileName)
+                        FileOutputStream(file).use { out ->
+                            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
 
         var submissionAttempts = 0
         var totalSolverAttempts = 0
@@ -170,18 +199,14 @@ object PortalAuth {
                     .header("User-Agent", DESKTOP_USER_AGENT)
                     .build()
 
-                val getCall = client.newCall(getReq)
-                val getResp = try {
-                    getCall.execute()
-                } catch (e: Exception) {
-                    currentCoroutineContext().ensureActive()
-                    throw e
-                }
+                val getResp = client.newCall(getReq).await()
                 val html = getResp.body?.string() ?: ""
                 getResp.close()
 
                 val (verificationToken, initialCaptchaToken) = parseLoginPage(html)
                 var captchaToken = initialCaptchaToken
+
+                UniTrackLogger.d("PortalAuth: GET '/' status=${getResp.code}, hasCaptchaToken=${initialCaptchaToken.isNotBlank()}")
 
                 var captchaAns = ""
                 if (captchaToken.isNotBlank()) {
@@ -200,23 +225,18 @@ object PortalAuth {
                             .header("Accept", "image/*")
                             .build()
 
-                        val imgCall = client.newCall(imgReq)
-                        val imgResp = try {
-                            imgCall.execute()
-                        } catch (e: Exception) {
-                            currentCoroutineContext().ensureActive()
-                            throw e
-                        }
+                        val imgResp = client.newCall(imgReq).await()
                         val bytes = imgResp.body?.bytes()
                         imgResp.close()
 
-                        if (bytes != null && bytes.isNotEmpty()) {
-                            val bitmap = decodeGifToBitmap(bytes)
-                            if (bitmap != null) {
-                                solved = CaptchaSolver.solve(context, bitmap)
-                            }
+                        val bitmap = if (bytes != null && bytes.isNotEmpty()) decodeGifToBitmap(bytes) else null
+                        UniTrackLogger.d("PortalAuth: Captcha img bytes=${bytes?.size ?: 0}, bmpSize=${bitmap?.let { "${it.width}x${it.height}" } ?: "decode failed"}")
+
+                        if (bitmap != null) {
+                            solved = CaptchaSolver.solve(context, bitmap)
                         }
 
+                        var refreshSuccess = false
                         if (solved == null) {
                             if (totalSolverAttempts >= MAX_SOLVER_ATTEMPTS) break
 
@@ -235,14 +255,14 @@ object PortalAuth {
                                 .build()
 
                             try {
-                                val refCall = client.newCall(refreshReq)
-                                val refResp = refCall.execute()
+                                val refResp = client.newCall(refreshReq).await()
                                 val refScript = refResp.body?.string() ?: ""
                                 refResp.close()
 
                                 val newToken = parseRefreshToken(refScript)
                                 if (!newToken.isNullOrBlank()) {
                                     captchaToken = newToken
+                                    refreshSuccess = true
                                 }
                             } catch (e: Exception) {
                                 currentCoroutineContext().ensureActive()
@@ -250,6 +270,8 @@ object PortalAuth {
 
                             delay(400)
                         }
+
+                        UniTrackLogger.d("PortalAuth: Solver attempt $totalSolverAttempts -> ${if (solved != null) "solved" else "failed"}, refreshed=$refreshSuccess")
                     }
 
                     if (solved == null) {
@@ -276,19 +298,15 @@ object PortalAuth {
                     .header("Referer", "$BASE/")
                     .build()
 
-                val postCall = client.newCall(postReq)
-                val postResp = try {
-                    postCall.execute()
-                } catch (e: Exception) {
-                    currentCoroutineContext().ensureActive()
-                    throw e
-                }
+                val postResp = client.newCall(postReq).await()
                 val finalUrl = postResp.request.url.toString()
+                val finalPath = postResp.request.url.encodedPath
                 val respHtml = postResp.body?.string() ?: ""
                 postResp.close()
 
                 // Step 6: Success check
                 if (finalUrl.contains("/Student", ignoreCase = true) || respHtml.contains("/Login/Logout", ignoreCase = true)) {
+                    UniTrackLogger.d("PortalAuth: POST success -> final path='$finalPath'")
                     return LoginResult.Success(finalUrl)
                 }
 
@@ -296,6 +314,8 @@ object PortalAuth {
                 val summaryErr = errDoc.select(".validation-summary-errors, .field-validation-error").text()
 
                 val classifiedError = classifyLoginError(summaryErr)
+                UniTrackLogger.d("PortalAuth: POST final path='$finalPath', errType=$classifiedError, errText='$summaryErr'")
+
                 when (classifiedError) {
                     LoginErrorType.CAPTCHA -> {
                         // Re-submit allowed ONLY for captcha error
@@ -312,9 +332,8 @@ object PortalAuth {
                         return LoginResult.NetworkError("Unexpected response")
                     }
                 }
-            } catch (e: CancellationException) {
-                return LoginResult.Cancelled
             } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
                 UniTrackLogger.e("PortalAuth network error: ${e.message}", e)
                 return LoginResult.NetworkError(e.message ?: "Unknown network error")
             }
