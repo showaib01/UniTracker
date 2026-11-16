@@ -306,18 +306,22 @@ fun PortalScreen(
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                 val targetUri = request?.url ?: return false
                                 val host = targetUri.host?.lowercase() ?: ""
+                                val scheme = targetUri.scheme?.lowercase() ?: ""
 
-                                if (host == "portal.aiub.edu" || host.endsWith(".aiub.edu")) {
+                                if (host.isEmpty() || host == "portal.aiub.edu" || host.endsWith(".aiub.edu") || host.contains("aiub.edu")) {
                                     return false
                                 }
 
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, targetUri)
-                                    ctx.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(ctx, "Could not open external link", Toast.LENGTH_SHORT).show()
+                                if (scheme == "http" || scheme == "https") {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, targetUri)
+                                        ctx.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(ctx, "Could not open external link", Toast.LENGTH_SHORT).show()
+                                    }
+                                    return true
                                 }
-                                return true
+                                return false
                             }
 
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -597,6 +601,8 @@ private fun configureWebView(
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
     settings.userAgentString = PortalAuth.DESKTOP_USER_AGENT
+    settings.setSupportMultipleWindows(false)
+    settings.javaScriptCanOpenWindowsAutomatically = false
 
     settings.allowFileAccess = false
     settings.allowContentAccess = false

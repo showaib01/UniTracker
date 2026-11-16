@@ -272,6 +272,11 @@ object PortalAuth {
                         }
 
                         UniTrackLogger.d("PortalAuth: Solver attempt $totalSolverAttempts -> ${if (solved != null) "solved" else "failed"}, refreshed=$refreshSuccess")
+
+                        if (solved == null && totalSolverAttempts % 5 == 0 && submissionAttempts < MAX_SUBMISSIONS) {
+                            UniTrackLogger.d("PortalAuth: 5 solver attempts reached on current page token, re-fetching GET '/'...")
+                            break
+                        }
                     }
 
                     if (solved == null) {

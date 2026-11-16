@@ -12,8 +12,8 @@ import java.io.InputStream
 
 object CaptchaSolver {
 
-    private const val CONFIDENCE_THRESHOLD = 85
-    private const val MIN_INK_COUNT = 100
+    private const val CONFIDENCE_THRESHOLD = 55
+    private const val MIN_INK_COUNT = 80
     private const val MIN_BLOB_SIZE = 5
     private const val UPSCALE_SCALE = 4
     private const val MIN_ASSET_SIZE_BYTES = 5 * 1024 * 1024L
@@ -98,6 +98,13 @@ object CaptchaSolver {
         }
     }
 
+    private fun isBlueInk(p: Int): Boolean {
+        val r = Color.red(p)
+        val g = Color.green(p)
+        val b = Color.blue(p)
+        return b > 120 && b > r + 15 && b > g + 15
+    }
+
     fun solve(context: Context, bitmap: Bitmap): Int? {
         val api = getTessApi(context) ?: return null
 
@@ -112,10 +119,7 @@ object CaptchaSolver {
 
         var inkCount = 0
         for (p in pixels) {
-            val r = Color.red(p)
-            val g = Color.green(p)
-            val b = Color.blue(p)
-            if (b > 200 && r < 60 && g < 60) {
+            if (isBlueInk(p)) {
                 inkCount++
             }
         }
@@ -172,6 +176,10 @@ object CaptchaSolver {
             if (ans2 != null && conf2 >= CONFIDENCE_THRESHOLD) {
                 return ans2
             }
+
+            if (ans1 != null && conf1 >= 40) {
+                return ans1
+            }
         }
 
         return null
@@ -180,11 +188,7 @@ object CaptchaSolver {
     private fun despeckle(pixels: IntArray, w: Int, h: Int): BooleanArray {
         val ink = BooleanArray(w * h)
         for (i in pixels.indices) {
-            val p = pixels[i]
-            val r = Color.red(p)
-            val g = Color.green(p)
-            val b = Color.blue(p)
-            ink[i] = (b > 200 && r < 60 && g < 60)
+            ink[i] = isBlueInk(pixels[i])
         }
 
         val visited = BooleanArray(w * h)
@@ -255,7 +259,7 @@ object CaptchaSolver {
     }
 
     private fun processPass1(ink: BooleanArray, w: Int, h: Int): Bitmap {
-        val dilated = directionalDilate(ink, w, h, radius = 2)
+        val dilated = directionalDilate(ink, w, h, radius = 1)
         return nearestNeighborUpscale(dilated, w, h, scale = UPSCALE_SCALE)
     }
 
