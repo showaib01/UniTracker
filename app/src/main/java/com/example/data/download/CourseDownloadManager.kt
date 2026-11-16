@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Environment
 import android.webkit.CookieManager
 import com.example.UniTrackApplication
+import com.example.data.auth.PortalAuth
 import com.example.data.local.entity.DownloadedFileEntity
 import com.example.util.UniTrackLogger
 import kotlinx.coroutines.CoroutineScope
@@ -100,7 +101,7 @@ object CourseDownloadManager {
 
         val requestBuilder = Request.Builder()
             .url(url)
-            .header("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android 14) Mobile")
+            .header("User-Agent", userAgent ?: PortalAuth.DESKTOP_USER_AGENT)
             .header("Cookie", cookies)
 
         UniTrackLogger.i("CourseDownloadManager: Starting download of $url to ${targetFile.name}")

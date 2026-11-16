@@ -6,6 +6,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
@@ -32,7 +34,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Warning
@@ -48,8 +49,8 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,10 +58,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -76,14 +77,14 @@ import com.example.data.auth.LoginResult
 import com.example.data.auth.PortalAuth
 import com.example.data.download.CourseDownloadManager
 import com.example.data.local.entity.CourseSettingEntity
+import com.example.data.parser.PageState
 import com.example.data.parser.PortalSelectorConfig
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.UniTrackTheme
 import com.example.util.UniTrackLogger
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 
 private data class DownloadPendingParams(
@@ -111,16 +112,16 @@ private class PortalWebAppBridge(
 fun PortalScreen(
     onNavigateBack: () -> Unit,
     selectedCourseKey: String? = null,
-    onNavigateToDebug: (() -> Unit)? = null,
-    onNavigateToCaptures: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: PortalViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as com.example.UniTrackApplication
+    val scope = rememberCoroutineScope()
     val colors = UniTrackTheme.colors
     val typography = UniTrackTheme.typography
     val uiState by viewModel.uiState.collectAsState()
+    val autoSignInState by viewModel.autoSignInState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     val routinesFlow = remember { app.database.routineDao().getAllRoutines() }
@@ -143,44 +144,64 @@ fun PortalScreen(
 
     var pendingDownload by remember { mutableStateOf<DownloadPendingParams?>(null) }
     var showFolderPickerSheet by remember { mutableStateOf(false) }
-    var isSigningIn by remember { mutableStateOf(false) }
+    var showSignInSheet by remember { mutableStateOf(false) }
+    var userChoseManual by remember { mutableStateOf(false) }
+    var prefilledStudentId by remember { mutableStateOf(uiState.studentId) }
 
-    // Native auto-login on startup if credentials exist (at most once)
-    LaunchedEffect(Unit) {
-        val credStore = CredentialStore(context)
-        if (credStore.hasCredentials()) {
-            val creds = credStore.load()
-            if (creds != null) {
-                isSigningIn = true
-                val result = PortalAuth.login(context, creds.first, creds.second)
-                isSigningIn = false
-                when (result) {
-                    is LoginResult.Success -> {
-                        val cookieManager = CookieManager.getInstance()
-                        val webView = PortalWebViewHolder.getWebView()
-                        for (cookieStr in PortalAuth.cookiesForWebView()) {
-                            cookieManager.setCookie("https://portal.aiub.edu", "$cookieStr; Path=/")
-                        }
-                        if (webView != null) {
-                            cookieManager.setAcceptThirdPartyCookies(webView, true)
-                        }
-                        cookieManager.flush()
-                        webView?.loadUrl(result.landingUrl)
-                        viewModel.onPageFinished(result.landingUrl, "AIUB Portal", false)
-                    }
-                    is LoginResult.WrongCredentials -> {
-                        credStore.clear()
-                        Toast.makeText(context, "Saved login was wrong, please log in again", Toast.LENGTH_LONG).show()
-                    }
-                    is LoginResult.Locked -> {
-                        Toast.makeText(context, "Account locked. Please log in manually.", Toast.LENGTH_LONG).show()
-                    }
-                    is LoginResult.CaptchaFailed, is LoginResult.NetworkError -> {
-                        Toast.makeText(context, "Auto-login failed. Please log in manually.", Toast.LENGTH_SHORT).show()
+    fun triggerAutoSignIn(isRetry: Boolean = false) {
+        viewModel.startAutoSignIn(
+            context = context,
+            isRetry = isRetry,
+            onSuccess = { landingUrl ->
+                val cookieManager = CookieManager.getInstance()
+                val webView = PortalWebViewHolder.getWebView()
+                for (cookieStr in PortalAuth.cookiesForWebView()) {
+                    cookieManager.setCookie("https://portal.aiub.edu", "$cookieStr; Path=/")
+                }
+                if (webView != null) {
+                    cookieManager.setAcceptThirdPartyCookies(webView, true)
+                }
+                cookieManager.flush()
+                webView?.loadUrl(landingUrl)
+            },
+            onWrongCredentials = { id ->
+                prefilledStudentId = id
+                showSignInSheet = true
+                Toast.makeText(context, "Saved login was wrong, please sign in again", Toast.LENGTH_LONG).show()
+            },
+            onManualRequired = { _ ->
+                val creds = CredentialStore(context).load()
+                if (creds != null) {
+                    val webView = PortalWebViewHolder.getWebView()
+                    val idJson = JSONObject.quote(creds.first)
+                    val passJson = JSONObject.quote(creds.second)
+                    webView?.evaluateJavascript(
+                        """
+                        (function() {
+                            var u = document.querySelector('input[name="UserName"]');
+                            var p = document.querySelector('input[name="Password"]');
+                            if (u) { u.value = $idJson; u.dispatchEvent(new Event('input', {bubbles:true})); u.dispatchEvent(new Event('change', {bubbles:true})); }
+                            if (p) { p.value = $passJson; p.dispatchEvent(new Event('input', {bubbles:true})); p.dispatchEvent(new Event('change', {bubbles:true})); }
+                            var c = document.querySelector('#CaptchaInputText');
+                            if (c) c.focus();
+                        })();
+                        """.trimIndent(),
+                        null
+                    )
+                }
+
+                scope.launch {
+                    val snackResult = snackbarHostState.showSnackbar(
+                        message = "Couldn't read the captcha automatically. Type it yourself or tap Retry.",
+                        actionLabel = "Retry",
+                        duration = SnackbarDuration.Long
+                    )
+                    if (snackResult == SnackbarResult.ActionPerformed) {
+                        triggerAutoSignIn(isRetry = true)
                     }
                 }
             }
-        }
+        )
     }
 
     LaunchedEffect(Unit) {
@@ -227,12 +248,13 @@ fun PortalScreen(
         }
     }
 
-    if (uiState.isSessionExpiredPrompt) {
+    // Session expired AlertDialog (must NOT show while auto sign-in is Running)
+    if (uiState.isSessionExpiredPrompt && autoSignInState !is AutoSignInState.Running) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissSessionExpiredPrompt() },
             icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
             title = { Text(text = stringResource(R.string.portal_session_expired)) },
-            text = { Text("Your portal session has expired or redirected to login. Please log in again to sync your routine and attendance.") },
+            text = { Text("Your portal session has expired or redirected to login. Please log in again to sync your routine.") },
             confirmButton = {
                 Button(onClick = { viewModel.dismissSessionExpiredPrompt() }) {
                     Text("OK")
@@ -311,32 +333,58 @@ fun PortalScreen(
                                 val currentUrlStr = url ?: view?.url ?: ""
                                 viewModel.onPageFinished(currentUrlStr, view?.title, view?.canGoBack() ?: false)
 
-                                if (PortalSelectorConfig.isLoginPage(currentUrlStr, null)) {
-                                    // Inject first-login capture listener using exact selectors input[name=UserName] & input[name=Password]
+                                Handler(Looper.getMainLooper()).postDelayed({
                                     view?.evaluateJavascript(
-                                        """
-                                        (function() {
-                                            if (window.uniTrackCaptured) return;
-                                            window.uniTrackCaptured = true;
-                                            var u = document.querySelector('input[name="UserName"]') || document.querySelector('input[name*="username"]');
-                                            var p = document.querySelector('input[name="Password"]') || document.querySelector('input[type="password"]');
-                                            var f = document.querySelector('form');
-                                            var btn = document.querySelector('#CaptchaInputText') || document.querySelector('button[type="submit"]');
-                                            
-                                            function sendCreds() {
-                                                var id = u ? u.value : '';
-                                                var pass = p ? p.value : '';
-                                                if (id && pass && window.UniTrackBridge) {
-                                                    window.UniTrackBridge.onLoginSubmit(id, pass);
-                                                }
+                                        "(function(){ if (document.querySelector(\"a[href*='/Login/Logout']\")) return 'app'; if (document.querySelector('input[name=\"UserName\"]') && document.querySelector('input[name=\"Password\"]')) return 'login'; return 'other'; })()"
+                                    ) { rawJson ->
+                                        val clean = rawJson?.replace("\"", "")?.trim() ?: "other"
+                                        val state = PortalSelectorConfig.classifyPage(clean, currentUrlStr)
+
+                                        viewModel.handlePageState(state, currentUrlStr)
+
+                                        when (state) {
+                                            PageState.APP -> {
+                                                showSignInSheet = false
                                             }
-                                            if (f) f.addEventListener('submit', sendCreds);
-                                            if (btn) btn.addEventListener('click', sendCreds);
-                                        })();
-                                        """.trimIndent(),
-                                        null
-                                    )
-                                }
+                                            PageState.LOGIN -> {
+                                                val credStore = CredentialStore(context)
+                                                if (credStore.hasCredentials() && autoSignInState !is AutoSignInState.Running && !userChoseManual) {
+                                                    triggerAutoSignIn()
+                                                } else if (!credStore.hasCredentials() && !userChoseManual) {
+                                                    showSignInSheet = true
+                                                }
+
+                                                // Inject 1.2 capture listener
+                                                view.evaluateJavascript(
+                                                    """
+                                                    (function() {
+                                                        if (window.uniTrackCaptured) return;
+                                                        var u = document.querySelector('input[name="UserName"]');
+                                                        var p = document.querySelector('input[name="Password"]');
+                                                        if (!u || !p) return;
+                                                        var f = u.closest('form');
+                                                        if (!f) return;
+                                                        window.uniTrackCaptured = true;
+                                                        
+                                                        function sendCreds() {
+                                                            var id = u ? u.value : '';
+                                                            var pass = p ? p.value : '';
+                                                            if (id && pass && window.UniTrackBridge) {
+                                                                window.UniTrackBridge.onLoginSubmit(id, pass);
+                                                            }
+                                                        }
+                                                        f.addEventListener('submit', sendCreds, true);
+                                                        var btn = f.querySelector('button[type="submit"], input[type="submit"]');
+                                                        if (btn) btn.addEventListener('click', sendCreds, true);
+                                                    })();
+                                                    """.trimIndent(),
+                                                    null
+                                                )
+                                            }
+                                            PageState.OTHER -> {}
+                                        }
+                                    }
+                                }, 300)
                             }
                         }
 
@@ -366,8 +414,9 @@ fun PortalScreen(
                     .testTag("portal_webview")
             )
 
-            // Signing in overlay
-            if (isSigningIn) {
+            // Auto sign-in overlay while Running
+            if (autoSignInState is AutoSignInState.Running) {
+                val running = autoSignInState as AutoSignInState.Running
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -387,11 +436,36 @@ fun PortalScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = colors.textPrimary
                             )
+                            Text(
+                                text = "Reading captcha... (${running.attempt}/${running.max})",
+                                style = typography.meta,
+                                color = colors.textSecondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            TextButton(
+                                onClick = { viewModel.cancelAutoSignIn() },
+                                modifier = Modifier.testTag("portal_signin_cancel")
+                            ) {
+                                Text("Cancel", color = colors.statusDanger)
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    // First-time Sign In Bottom Sheet
+    if (showSignInSheet && autoSignInState !is AutoSignInState.Running) {
+        SignInSheet(
+            onDismiss = { showSignInSheet = false },
+            onUseWebsiteLogin = {
+                userChoseManual = true
+                showSignInSheet = false
+            },
+            viewModel = viewModel,
+            prefilledStudentId = prefilledStudentId
+        )
     }
 
     // Download Course Folder Selection Bottom Sheet

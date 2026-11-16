@@ -19,6 +19,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
+import com.example.data.auth.PortalAuth
+
 data class HeadlessPageResult(
     val url: String,
     val html: String,
@@ -75,7 +77,7 @@ object HeadlessWebViewSyncHelper {
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
-                            userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+                            userAgentString = PortalAuth.DESKTOP_USER_AGENT
                             allowFileAccess = false
                             allowContentAccess = false
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -1,8 +1,26 @@
 package com.example.data.parser
 
+enum class PageState {
+    APP,
+    LOGIN,
+    OTHER
+}
+
 object PortalSelectorConfig {
 
     const val DEFAULT_PORTAL_HOST = "portal.aiub.edu"
+
+    fun classifyPage(domResult: String, url: String): PageState {
+        val cleanDom = domResult.replace("\"", "").trim()
+        val path = try { java.net.URI(url).path ?: "" } catch (_: Exception) { "" }
+        if (cleanDom.equals("app", ignoreCase = true) || path.startsWith("/Student", ignoreCase = true)) {
+            return PageState.APP
+        }
+        if (cleanDom.equals("login", ignoreCase = true)) {
+            return PageState.LOGIN
+        }
+        return PageState.OTHER
+    }
 
     val ROUTINE_PATH_KEYWORDS = listOf("/routine", "/classroutine", "/student/routine", "/student/schedule", "/student/home")
     val RESULTS_PATH_KEYWORDS = listOf("/result", "/grade", "/student/grade", "/student/result")

@@ -3,6 +3,7 @@ package com.example.data.auth
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import com.example.BuildConfig
 import com.example.util.UniTrackLogger
 import com.googlecode.tesseract.android.TessBaseAPI
 import java.io.File
@@ -11,16 +12,30 @@ import java.io.InputStream
 
 object CaptchaSolver {
 
+    private const val CONFIDENCE_THRESHOLD = 85
+    private const val MIN_INK_COUNT = 100
+    private const val MIN_BLOB_SIZE = 5
+    private const val UPSCALE_SCALE = 4
+    private const val MIN_ASSET_SIZE_BYTES = 5 * 1024 * 1024L
+
     private var tessApi: TessBaseAPI? = null
+    private var initFailed = false
+
     @Synchronized
     private fun getTessApi(context: Context): TessBaseAPI? {
+        if (initFailed) return null
         if (tessApi != null) return tessApi
         try {
-            val tessDir = ensureTessData(context) ?: return null
+            val tessDir = ensureTessData(context)
+            if (tessDir == null) {
+                initFailed = true
+                return null
+            }
             val api = TessBaseAPI()
             val success = api.init(tessDir.absolutePath, "eng")
             if (!success) {
                 api.recycle()
+                initFailed = true
                 return null
             }
             api.pageSegMode = TessBaseAPI.PageSegMode.PSM_SINGLE_LINE
@@ -29,6 +44,7 @@ object CaptchaSolver {
             return api
         } catch (e: Exception) {
             UniTrackLogger.e("CaptchaSolver: Failed to initialize Tesseract: ${e.message}")
+            initFailed = true
             return null
         }
     }
@@ -39,17 +55,38 @@ object CaptchaSolver {
         val targetFile = File(tessFolder, "eng.traineddata")
 
         try {
-            val assetStream: InputStream = context.assets.open("tessdata/eng.traineddata")
-            val assetBytes = assetStream.readBytes()
-            assetStream.close()
+            var assetSize = -1L
+            try {
+                val afd = context.assets.openFd("tessdata/eng.traineddata")
+                assetSize = afd.length
+                afd.close()
+            } catch (_: Exception) {}
 
-            if (assetBytes.size < 5 * 1024 * 1024) {
+            if (assetSize > 0 && assetSize < MIN_ASSET_SIZE_BYTES) {
                 UniTrackLogger.w("CaptchaSolver: Asset eng.traineddata is invalid (<5MB)")
                 return null
             }
 
-            if (!targetFile.exists() || targetFile.length() < assetBytes.size.toLong()) {
-                FileOutputStream(targetFile).use { it.write(assetBytes) }
+            if (!targetFile.exists() || (assetSize > 0 && targetFile.length() != assetSize)) {
+                val tempFile = File(tessFolder, "eng.traineddata.tmp")
+                val assetStream: InputStream = context.assets.open("tessdata/eng.traineddata")
+                FileOutputStream(tempFile).use { outStream ->
+                    val buffer = ByteArray(8192)
+                    var read: Int
+                    var totalRead = 0L
+                    while (assetStream.read(buffer).also { read = it } != -1) {
+                        outStream.write(buffer, 0, read)
+                        totalRead += read
+                    }
+                    if (totalRead < MIN_ASSET_SIZE_BYTES) {
+                        UniTrackLogger.w("CaptchaSolver: Copied asset eng.traineddata is invalid (<5MB)")
+                        tempFile.delete()
+                        return null
+                    }
+                }
+                assetStream.close()
+                if (targetFile.exists()) targetFile.delete()
+                tempFile.renameTo(targetFile)
                 UniTrackLogger.i("CaptchaSolver: Copied eng.traineddata to ${targetFile.absolutePath}")
             }
             return tessFolder
@@ -77,19 +114,23 @@ object CaptchaSolver {
             }
         }
 
-        val pass1Bmp = if (inkCount >= 100) {
-            val despeckled = despeckle(pixels, w, h)
-            processPass1(despeckled, w, h)
-        } else {
-            processFallback(pixels, w, h)
+        if (inkCount < MIN_INK_COUNT) {
+            val fallbackBmp = processFallback(pixels, w, h)
+            synchronized(this) {
+                api.setImage(fallbackBmp)
+                val text = api.utF8Text ?: ""
+                val conf = api.meanConfidence()
+                val ans = parseEquation(text)
+                if (BuildConfig.DEBUG) {
+                    UniTrackLogger.d("CaptchaSolver [Fallback]: pass=0, conf=$conf, text='$text', ans=$ans")
+                }
+                return if (conf >= CONFIDENCE_THRESHOLD && ans != null) ans else null
+            }
         }
 
-        val pass2Bmp = if (inkCount >= 100) {
-            val despeckled = despeckle(pixels, w, h)
-            processPass2(despeckled, w, h)
-        } else {
-            null
-        }
+        val despeckled = despeckle(pixels, w, h)
+        val pass1Bmp = processPass1(despeckled, w, h)
+        val pass2Bmp = processPass2(despeckled, w, h)
 
         synchronized(this) {
             api.setImage(pass1Bmp)
@@ -97,19 +138,29 @@ object CaptchaSolver {
             val conf1 = api.meanConfidence()
             val ans1 = parseEquation(text1)
 
-            if (conf1 >= 85 && ans1 != null) {
+            if (BuildConfig.DEBUG) {
+                UniTrackLogger.d("CaptchaSolver: pass=1, conf=$conf1, text='$text1', ans=$ans1")
+            }
+
+            if (conf1 >= CONFIDENCE_THRESHOLD && ans1 != null) {
                 return ans1
             }
 
-            if (pass2Bmp != null) {
-                api.setImage(pass2Bmp)
-                val text2 = api.utF8Text ?: ""
-                val ans2 = parseEquation(text2)
-                if (ans1 != null && ans1 == ans2) {
-                    return ans1
-                }
-            } else if (ans1 != null) {
+            api.setImage(pass2Bmp)
+            val text2 = api.utF8Text ?: ""
+            val conf2 = api.meanConfidence()
+            val ans2 = parseEquation(text2)
+
+            if (BuildConfig.DEBUG) {
+                UniTrackLogger.d("CaptchaSolver: pass=2, conf=$conf2, text='$text2', ans=$ans2")
+            }
+
+            if (ans1 != null && ans1 == ans2) {
                 return ans1
+            }
+
+            if (ans2 != null && conf2 >= CONFIDENCE_THRESHOLD) {
+                return ans2
             }
         }
 
@@ -126,7 +177,6 @@ object CaptchaSolver {
             ink[i] = (b > 200 && r < 60 && g < 60)
         }
 
-        // Remove 8-connected blobs smaller than 5 pixels
         val visited = BooleanArray(w * h)
         for (y in 0 until h) {
             for (x in 0 until w) {
@@ -159,7 +209,7 @@ object CaptchaSolver {
                         }
                     }
 
-                    if (component.size < 5) {
+                    if (component.size < MIN_BLOB_SIZE) {
                         for (cIdx in component) {
                             ink[cIdx] = false
                         }
@@ -170,44 +220,55 @@ object CaptchaSolver {
         return ink
     }
 
-    private fun processPass1(ink: BooleanArray, w: Int, h: Int): Bitmap {
-        // Directional dilation arm 2
-        val dilated = BooleanArray(w * h)
+    private fun directionalDilate(src: BooleanArray, w: Int, h: Int, radius: Int): BooleanArray {
+        val out = BooleanArray(w * h)
         for (y in 0 until h) {
             for (x in 0 until w) {
-                if (ink[y * w + x]) {
-                    for (dy in -2..2) {
-                        for (dx in -2..2) {
-                            val nx = x + dx
-                            val ny = y + dy
-                            if (nx in 0 until w && ny in 0 until h) {
-                                dilated[ny * w + nx] = true
-                            }
-                        }
+                if (src[y * w + x]) {
+                    for (r in -radius..radius) {
+                        // Horizontal
+                        val hx = x + r
+                        if (hx in 0 until w) out[y * w + hx] = true
+                        // Vertical
+                        val vy = y + r
+                        if (vy in 0 until h) out[vy * w + x] = true
+                        // Main diagonal
+                        if (hx in 0 until w && vy in 0 until h) out[vy * w + hx] = true
+                        // Anti-diagonal
+                        val ay = y - r
+                        if (hx in 0 until w && ay in 0 until h) out[ay * w + hx] = true
                     }
                 }
             }
         }
-        return nearestNeighborUpscale(dilated, w, h, scale = 4)
+        return out
+    }
+
+    private fun processPass1(ink: BooleanArray, w: Int, h: Int): Bitmap {
+        val dilated = directionalDilate(ink, w, h, radius = 2)
+        return nearestNeighborUpscale(dilated, w, h, scale = UPSCALE_SCALE)
     }
 
     private fun processPass2(ink: BooleanArray, w: Int, h: Int): Bitmap {
-        // Morphological close + dilate arm 1
+        // Plus-shaped close: dilate arm 1, then keep pixels whose 4-connected neighbors are also set
+        val dilatedArm1 = directionalDilate(ink, w, h, radius = 1)
         val closed = BooleanArray(w * h)
-        // Simple plus-shape close
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val idx = y * w + x
-                if (ink[idx]) {
-                    closed[idx] = true
-                    if (x > 0) closed[y * w + (x - 1)] = true
-                    if (x < w - 1) closed[y * w + (x + 1)] = true
-                    if (y > 0) closed[(y - 1) * w + x] = true
-                    if (y < h - 1) closed[(y + 1) * w + x] = true
+                if (dilatedArm1[idx]) {
+                    val hasLeft = x > 0 && dilatedArm1[y * w + (x - 1)]
+                    val hasRight = x < w - 1 && dilatedArm1[y * w + (x + 1)]
+                    val hasTop = y > 0 && dilatedArm1[(y - 1) * w + x]
+                    val hasBottom = y < h - 1 && dilatedArm1[(y + 1) * w + x]
+                    if (hasLeft && hasRight && hasTop && hasBottom) {
+                        closed[idx] = true
+                    }
                 }
             }
         }
-        return nearestNeighborUpscale(closed, w, h, scale = 4)
+        val finalDilated = directionalDilate(closed, w, h, radius = 1)
+        return nearestNeighborUpscale(finalDilated, w, h, scale = UPSCALE_SCALE)
     }
 
     private fun processFallback(pixels: IntArray, w: Int, h: Int): Bitmap {
@@ -217,7 +278,7 @@ object CaptchaSolver {
             val lum = (0.299 * Color.red(p) + 0.587 * Color.green(p) + 0.114 * Color.blue(p)).toInt()
             bw[i] = lum <= 150
         }
-        return nearestNeighborUpscale(bw, w, h, scale = 4)
+        return nearestNeighborUpscale(bw, w, h, scale = UPSCALE_SCALE)
     }
 
     private fun nearestNeighborUpscale(src: BooleanArray, w: Int, h: Int, scale: Int): Bitmap {
