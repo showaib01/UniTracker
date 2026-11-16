@@ -10,6 +10,7 @@ import com.example.data.local.entity.CourseItemStatus
 import com.example.data.local.entity.CourseSettingEntity
 import com.example.ui.components.CoursePickerOption
 import com.example.util.CourseItemReminderScheduler
+import com.example.util.CourseItemSaver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class CourseUiState(
     val courseKey: String = "",
@@ -125,17 +127,17 @@ class CourseViewModel(
 
     fun saveItem(item: CourseItemEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            val id = if (item.id == 0L) {
-                courseItemDao.insertItem(item)
-            } else {
-                courseItemDao.updateItem(item)
-                item.id
-            }
-            CourseItemReminderScheduler.scheduleItemReminders(
-                app,
-                item.copy(id = id)
-            )
+            CourseItemSaver.saveItem(app, item)
             dismissAddEditSheet()
+        }
+    }
+
+    fun autoSaveDraft(item: CourseItemEntity, onSaved: (Long) -> Unit) {
+        viewModelScope.launch {
+            val id = CourseItemSaver.saveItem(app, item)
+            withContext(Dispatchers.Main) {
+                onSaved(id)
+            }
         }
     }
 

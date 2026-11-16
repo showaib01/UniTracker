@@ -661,6 +661,7 @@ fun TodayScreen(
             initialType = uiState.addEditInitialType,
             availableCourses = uiState.availableCourses,
             onSave = { item -> viewModel.saveCourseItem(item) },
+            onAutoSave = { item, onSaved -> viewModel.autoSaveDraft(item, onSaved) },
             onDelete = { item -> viewModel.deleteCourseItem(item) },
             onDismiss = { viewModel.dismissAddEditSheet() }
         )

@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,10 +47,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +65,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.R
 import com.example.data.local.entity.CourseItemEntity
 import com.example.data.local.entity.CourseItemType
 import com.example.ui.theme.UniTrackTheme
@@ -86,6 +94,38 @@ private data class SlotChipData(
     val room: String
 )
 
+internal fun isDraftDirty(
+    title: String,
+    autoTitle: String,
+    topics: String,
+    notes: String,
+    marksStr: String,
+    venue: String,
+    initialVenue: String,
+    dueAt: Long,
+    initialDueAt: Long,
+    hasTime: Boolean,
+    initialHasTime: Boolean,
+    type: String,
+    initialType: String,
+    courseKey: String?,
+    initialCourseKey: String?,
+    offsets: Set<Int>,
+    initialOffsets: Set<Int>
+): Boolean {
+    val titleTrimmed = title.trim()
+    val autoTrimmed = autoTitle.trim()
+    val isTitleChanged = titleTrimmed.isNotEmpty() && titleTrimmed != autoTrimmed
+    val isExtraFilled = topics.isNotBlank() || notes.isNotBlank() || marksStr.isNotBlank()
+    val isVenueChanged = venue.trim() != initialVenue.trim()
+    val isDateChanged = dueAt != initialDueAt || hasTime != initialHasTime
+    val isTypeChanged = type != initialType
+    val isCourseChanged = courseKey != initialCourseKey
+    val isOffsetsChanged = offsets != initialOffsets
+
+    return isTitleChanged || isExtraFilled || isVenueChanged || isDateChanged || isTypeChanged || isCourseChanged || isOffsetsChanged
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddEditCourseItemSheet(
@@ -94,6 +134,7 @@ fun AddEditCourseItemSheet(
     initialType: String? = null,
     availableCourses: List<CoursePickerOption>,
     onSave: (CourseItemEntity) -> Unit,
+    onAutoSave: ((CourseItemEntity, (Long) -> Unit) -> Unit)? = null,
     onDelete: ((CourseItemEntity) -> Unit)? = null,
     onDismiss: () -> Unit,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -105,57 +146,161 @@ fun AddEditCourseItemSheet(
 
     val isEditMode = existingItem != null
 
-    // Find initial course
     val defaultCourse = availableCourses.firstOrNull {
         it.courseKey == (existingItem?.courseKey ?: preselectedCourseKey)
     } ?: availableCourses.firstOrNull()
 
-    var selectedCourse by remember { mutableStateOf(defaultCourse) }
-    var selectedType by remember {
-        mutableStateOf(existingItem?.type ?: initialType ?: CourseItemType.QUIZ)
-    }
-    var title by remember { mutableStateOf(existingItem?.title ?: "") }
-    var hasCustomTitle by remember { mutableStateOf(existingItem != null && existingItem.title.isNotBlank()) }
-
-    var isManuallyEdited by remember { mutableStateOf(isEditMode) }
-    var isVenueManuallyEdited by remember { mutableStateOf(isEditMode && existingItem?.venue?.isNotBlank() == true) }
-
-    // Initial date, time & room calculation
     val initialSlotInfo = defaultCourse?.let { DateTimeUtils.calculateNextMeetingSlotInfo(it.meetingSlots) }
     val initialDueAt = existingItem?.dueAt ?: (initialSlotInfo?.millis ?: (System.currentTimeMillis() + 86400000L))
     val initialHasTime = existingItem?.hasTime ?: (initialSlotInfo?.hasTime ?: false)
     val initialVenue = existingItem?.venue ?: (initialSlotInfo?.room?.ifBlank { defaultCourse?.room ?: "" } ?: "")
+    val initialType = existingItem?.type ?: initialType ?: CourseItemType.QUIZ
+    val initialCourseKey = defaultCourse?.courseKey
+    val initialOffsets = existingItem?.getReminderOffsetsList()?.toSet() ?: setOf(1440, 120)
 
-    var dueAtMillis by remember { mutableStateOf(initialDueAt) }
-    var hasTime by remember { mutableStateOf(initialHasTime) }
-    var venue by remember { mutableStateOf(initialVenue) }
+    var selectedCourseKey by rememberSaveable {
+        mutableStateOf(existingItem?.courseKey ?: preselectedCourseKey ?: defaultCourse?.courseKey ?: "")
+    }
+    val selectedCourse = availableCourses.firstOrNull { it.courseKey == selectedCourseKey } ?: defaultCourse
 
-    var topics by remember { mutableStateOf(existingItem?.topics ?: "") }
-    var marksStr by remember {
+    var selectedType by rememberSaveable { mutableStateOf(existingItem?.type ?: initialType ?: CourseItemType.QUIZ) }
+    var title by rememberSaveable { mutableStateOf(existingItem?.title ?: "") }
+    var hasCustomTitle by rememberSaveable { mutableStateOf(existingItem != null && existingItem.title.isNotBlank()) }
+
+    var isManuallyEdited by rememberSaveable { mutableStateOf(isEditMode) }
+    var isVenueManuallyEdited by rememberSaveable { mutableStateOf(isEditMode && existingItem?.venue?.isNotBlank() == true) }
+
+    var dueAtMillis by rememberSaveable { mutableStateOf(initialDueAt) }
+    var hasTime by rememberSaveable { mutableStateOf(initialHasTime) }
+    var venue by rememberSaveable { mutableStateOf(initialVenue) }
+
+    var topics by rememberSaveable { mutableStateOf(existingItem?.topics ?: "") }
+    var marksStr by rememberSaveable {
         mutableStateOf(existingItem?.marks?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "")
     }
-    var notes by remember { mutableStateOf(existingItem?.notes ?: "") }
+    var notes by rememberSaveable { mutableStateOf(existingItem?.notes ?: "") }
 
-    var selectedOffsets by remember {
-        mutableStateOf(
-            existingItem?.getReminderOffsetsList()?.toSet() ?: setOf(1440, 120)
-        )
+    val offsetsSaver = Saver<Set<Int>, String>(
+        save = { it.joinToString(",") },
+        restore = { str -> if (str.isBlank()) emptySet() else str.split(",").mapNotNull { it.toIntOrNull() }.toSet() }
+    )
+    var selectedOffsets by rememberSaveable(stateSaver = offsetsSaver) {
+        mutableStateOf(existingItem?.getReminderOffsetsList()?.toSet() ?: setOf(1440, 120))
     }
+
+    var autoSavedId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var finished by rememberSaveable { mutableStateOf(false) }
 
     var titleError by remember { mutableStateOf<String?>(null) }
     var courseError by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var courseDropdownExpanded by remember { mutableStateOf(false) }
 
-    // Auto-suggest title when type or course changes if user hasn't typed a custom title
     LaunchedEffect(selectedType, selectedCourse) {
         if (!hasCustomTitle && !isEditMode) {
             title = CourseItemType.displayName(selectedType)
         }
     }
 
+    fun buildItem(): CourseItemEntity? {
+        val course = selectedCourse ?: return null
+        val finalTitle = title.ifBlank { CourseItemType.displayName(selectedType) }
+        val offsetsList = if (selectedOffsets.isEmpty()) listOf(1440, 120) else selectedOffsets.toList().sortedDescending()
+        val marksVal = marksStr.toDoubleOrNull()
+
+        val finalDueAt = if (!hasTime) {
+            Calendar.getInstance().apply {
+                timeInMillis = dueAtMillis
+                set(Calendar.HOUR_OF_DAY, 8)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+        } else dueAtMillis
+
+        val targetId = autoSavedId ?: existingItem?.id ?: 0L
+
+        return (existingItem ?: CourseItemEntity(
+            id = targetId,
+            courseKey = course.courseKey,
+            courseName = course.courseName,
+            section = course.section,
+            type = selectedType,
+            title = finalTitle.trim(),
+            dueAt = finalDueAt,
+            hasTime = hasTime,
+            topics = topics.trim(),
+            marks = marksVal,
+            venue = venue.trim(),
+            notes = notes.trim(),
+            reminderOffsets = offsetsList.joinToString(",")
+        )).copy(
+            id = targetId,
+            courseKey = course.courseKey,
+            courseName = course.courseName,
+            section = course.section,
+            type = selectedType,
+            title = finalTitle.trim(),
+            dueAt = finalDueAt,
+            hasTime = hasTime,
+            topics = topics.trim(),
+            marks = marksVal,
+            venue = venue.trim(),
+            notes = notes.trim(),
+            reminderOffsets = offsetsList.joinToString(",")
+        )
+    }
+
+    fun autoSaveIfNeeded() {
+        if (isEditMode || finished || onAutoSave == null) return
+        val autoTitle = CourseItemType.displayName(selectedType)
+        val dirty = isDraftDirty(
+            title = title,
+            autoTitle = autoTitle,
+            topics = topics,
+            notes = notes,
+            marksStr = marksStr,
+            venue = venue,
+            initialVenue = initialVenue,
+            dueAt = dueAtMillis,
+            initialDueAt = initialDueAt,
+            hasTime = hasTime,
+            initialHasTime = initialHasTime,
+            type = selectedType,
+            initialType = initialType,
+            courseKey = selectedCourse?.courseKey,
+            initialCourseKey = initialCourseKey,
+            offsets = selectedOffsets,
+            initialOffsets = initialOffsets
+        )
+        if (!dirty) return
+        val item = buildItem() ?: return
+        onAutoSave(item) { id ->
+            autoSavedId = id
+            try {
+                Toast.makeText(context, context.getString(R.string.item_saved_automatically), Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {}
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                autoSaveIfNeeded()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            autoSaveIfNeeded()
+            onDismiss()
+        },
         sheetState = sheetState,
         containerColor = colors.surfaceSheet,
         scrimColor = colors.scrim,
@@ -188,7 +333,10 @@ fun AddEditCourseItemSheet(
                 )
 
                 IconButton(
-                    onClick = onDismiss,
+                    onClick = {
+                        autoSaveIfNeeded()
+                        onDismiss()
+                    },
                     modifier = Modifier
                         .size(dimens.MinTouchTarget)
                         .testTag("close_sheet_button")
@@ -306,7 +454,7 @@ fun AddEditCourseItemSheet(
                                         )
                                     },
                                     onClick = {
-                                        selectedCourse = course
+                                        selectedCourseKey = course.courseKey
                                         if (!isEditMode) {
                                             val nextSlot = DateTimeUtils.calculateNextMeetingSlotInfo(course.meetingSlots)
                                             if (!isManuallyEdited) {
@@ -684,7 +832,10 @@ fun AddEditCourseItemSheet(
                 ) {
                     if (isEditMode && onDelete != null) {
                         IconButton(
-                            onClick = { showDeleteConfirmDialog = true },
+                            onClick = {
+                                finished = true
+                                showDeleteConfirmDialog = true
+                            },
                             modifier = Modifier
                                 .size(dimens.MinTouchTarget)
                                 .testTag("delete_item_button")
@@ -712,48 +863,8 @@ fun AddEditCourseItemSheet(
                                 return@AppButton
                             }
 
-                            val offsetsList = if (selectedOffsets.isEmpty()) listOf(1440, 120) else selectedOffsets.toList().sortedDescending()
-                            val marksVal = marksStr.toDoubleOrNull()
-
-                            // Calculate final dueAt: if "All day", compute relative to 8:00 AM of that day
-                            val finalDueAt = if (!hasTime) {
-                                Calendar.getInstance().apply {
-                                    timeInMillis = dueAtMillis
-                                    set(Calendar.HOUR_OF_DAY, 8)
-                                    set(Calendar.MINUTE, 0)
-                                    set(Calendar.SECOND, 0)
-                                    set(Calendar.MILLISECOND, 0)
-                                }.timeInMillis
-                            } else dueAtMillis
-
-                            val itemToSave = (existingItem ?: CourseItemEntity(
-                                courseKey = course.courseKey,
-                                courseName = course.courseName,
-                                section = course.section,
-                                type = selectedType,
-                                title = title.trim(),
-                                dueAt = finalDueAt,
-                                hasTime = hasTime,
-                                topics = topics.trim(),
-                                marks = marksVal,
-                                venue = venue.trim(),
-                                notes = notes.trim(),
-                                reminderOffsets = offsetsList.joinToString(",")
-                            )).copy(
-                                courseKey = course.courseKey,
-                                courseName = course.courseName,
-                                section = course.section,
-                                type = selectedType,
-                                title = title.trim(),
-                                dueAt = finalDueAt,
-                                hasTime = hasTime,
-                                topics = topics.trim(),
-                                marks = marksVal,
-                                venue = venue.trim(),
-                                notes = notes.trim(),
-                                reminderOffsets = offsetsList.joinToString(",")
-                            )
-
+                            val itemToSave = buildItem() ?: return@AppButton
+                            finished = true
                             onSave(itemToSave)
                         },
                         modifier = Modifier.testTag("save_item_button")
@@ -772,6 +883,7 @@ fun AddEditCourseItemSheet(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        finished = true
                         onDelete(existingItem)
                         showDeleteConfirmDialog = false
                     }

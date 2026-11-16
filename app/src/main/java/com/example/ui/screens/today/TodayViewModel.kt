@@ -17,12 +17,14 @@ import com.example.data.local.entity.TaskEntity
 import com.example.data.sync.PortalSyncWorker
 import com.example.ui.components.CoursePickerOption
 import com.example.util.CourseItemReminderScheduler
+import com.example.util.CourseItemSaver
 import com.example.util.CourseMeetingSlot
 import com.example.util.DateTimeUtils
 import com.example.util.UniTrackLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -459,14 +461,17 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveCourseItem(item: CourseItemEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            val id = if (item.id == 0L) {
-                courseItemDao.insertItem(item)
-            } else {
-                courseItemDao.updateItem(item)
-                item.id
-            }
-            CourseItemReminderScheduler.scheduleItemReminders(app, item.copy(id = id))
+            CourseItemSaver.saveItem(app, item)
             dismissAddEditSheet()
+        }
+    }
+
+    fun autoSaveDraft(item: CourseItemEntity, onSaved: (Long) -> Unit) {
+        viewModelScope.launch {
+            val id = CourseItemSaver.saveItem(app, item)
+            withContext(Dispatchers.Main) {
+                onSaved(id)
+            }
         }
     }
 

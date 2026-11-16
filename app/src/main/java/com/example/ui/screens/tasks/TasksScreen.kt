@@ -356,6 +356,7 @@ fun TasksScreen(
                 initialType = null,
                 availableCourses = uiState.availableCourses,
                 onSave = { item -> viewModel.saveItem(item) },
+                onAutoSave = { item, onSaved -> viewModel.autoSaveDraft(item, onSaved) },
                 onDelete = { item -> viewModel.deleteItem(item) },
                 onDismiss = { viewModel.dismissAddEditSheet() }
             )

@@ -27,4 +27,5 @@
     <string name="settings_my_downloads_subtitle">Files saved in course folders</string>
     <string name="downloads_select_course_folder_title">Save download to course folder</string>
     <string name="downloads_select_course_folder_other">Other / General</string>
+    <string name="item_saved_automatically">Saved automatically</string>
 </resources>

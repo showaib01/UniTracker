@@ -465,6 +465,7 @@ fun CourseScreen(
             initialType = uiState.initialAddType,
             availableCourses = listOf(courseOption),
             onSave = { updatedItem -> viewModel.saveItem(updatedItem) },
+            onAutoSave = { item, onSaved -> viewModel.autoSaveDraft(item, onSaved) },
             onDelete = { itemToDelete -> viewModel.deleteItem(itemToDelete) },
             onDismiss = { viewModel.dismissAddEditSheet() }
         )
