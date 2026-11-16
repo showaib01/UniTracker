@@ -639,9 +639,9 @@ fun SettingsScreen(
             title = { Text("About UniTrack", style = typography.sectionTitle, color = colors.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("UniTrack v1.0.0", style = typography.body, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                    Text("Offline-first academic assistant for American International University-Bangladesh (AIUB).", style = typography.body, color = colors.textSecondary)
-                    Text("Features secure student portal login, OCR captcha solver, automated class routines, offline course materials and task reminders.", style = typography.meta, color = colors.textSecondary)
+                    Text("UniTrack v1.2.0", style = typography.body, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                    Text("UniTrack is an unofficial, student-built independent academic assistant for American International University-Bangladesh (AIUB) and is not officially affiliated with AIUB.", style = typography.body, color = colors.textSecondary)
+                    Text("Tracks and syncs your student portal class routines to be available completely offline. Features secure student portal login, OCR captcha solver, offline class routines tracking, course materials, and timely proactive reminders before upcoming classes and tasks.", style = typography.meta, color = colors.textSecondary)
                 }
             },
             confirmButton = {
