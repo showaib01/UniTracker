@@ -13,7 +13,10 @@ Your class routine, quizzes, assignments, exams and course files — synced from
 [![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7f52ff?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Offline First](https://img.shields.io/badge/Offline-First-0b4a9e)](#-features)
 [![Version](https://img.shields.io/badge/version-1.2.0-1e6bb8)](#)
+[![Total Downloads](https://img.shields.io/github/downloads/showaib01/UniTracker/total?style=flat-square&label=downloads&color=blue)](https://github.com/showaib01/UniTracker/releases)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 
 **[⬇️ Download APK](https://github.com/showaib01/UniTracker/releases/latest)** ·
 **[🚀 Run Locally](#-run-locally-in-android-studio)** ·
